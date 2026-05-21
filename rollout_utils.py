@@ -148,7 +148,6 @@ def _parse_judge_output(
             judge_raw_output, thinking_tag=judge_thinking_tag
         )
         if not judge_format_valid:
-            print("[judge debug] malformed judge thinking tags; parse_thinking failed.")
             return {
                 "score": None,
                 "reason": "Judge output had malformed thinking tags.",
@@ -167,14 +166,6 @@ def _parse_judge_output(
     score_match = re.search(r"(?mi)^\s*Score:\s*([1-5])(?:\.)?\s*$", judge_output)
     reason_match = re.search(r"(?mi)^\s*Reason:\s*(\S.*)\s*$", judge_output)
     if score_match is None or reason_match is None:
-        preview = judge_output.replace("\n", "\\n")
-        if len(preview) > 240:
-            preview = preview[:240] + "...<truncated>"
-        print(
-            "[judge debug] invalid strict format; "
-            f"score_line={score_match is not None}, reason_line={reason_match is not None}, "
-            f"preview={preview}"
-        )
         return {
             "score": None,
             "reason": "Judge output format invalid: expected strict 'Score: <1-5>' and 'Reason: <text>' lines.",
@@ -184,8 +175,6 @@ def _parse_judge_output(
             "judge_skipped": False,
             "valid_judge_format": False,
         }
-
-    print(f"[judge debug] parsed score={score_match.group(1)} reason_ok=True")
     return {
         "score": int(score_match.group(1)),
         "reason": reason_match.group(1).strip(),
@@ -195,6 +184,23 @@ def _parse_judge_output(
         "judge_skipped": False,
         "valid_judge_format": True,
     }
+
+
+def _judge_summary_line(parsed_items: list[dict[str, Any]]) -> str:
+    total = len(parsed_items)
+    skipped = sum(1 for item in parsed_items if bool(item.get("judge_skipped")))
+    invalid_format = sum(1 for item in parsed_items if item.get("valid_judge_format") is False)
+    scored = sum(1 for item in parsed_items if isinstance(item.get("score"), int))
+    score_hist = {score: 0 for score in range(1, 6)}
+    for item in parsed_items:
+        score = item.get("score")
+        if isinstance(score, int) and score in score_hist:
+            score_hist[score] += 1
+    hist_text = ", ".join(f"{score}:{count}" for score, count in score_hist.items() if count > 0) or "none"
+    return (
+        f"total={total} scored={scored} skipped={skipped} invalid_format={invalid_format} "
+        f"scores={{ {hist_text} }}"
+    )
 
 
 def format_user_target_prompt(
@@ -224,6 +230,10 @@ def score_responses_compliance_batched(
     generation_kwargs: dict | None = None,
     target_thinking_tag: dict[str, str] | None = None,
     judge_thinking_tag: dict[str, str] | None = None,
+    emit_summary_log: bool = True,
+    stage_label: str = "judge",
+    item_ids: list[str] | None = None,
+    malformed_retry_attempts: int = 3,
 ) -> list[dict]:
     """Score multiple target responses in a single batched judge generation call."""
     if generation_kwargs is None:
@@ -257,18 +267,77 @@ def score_responses_compliance_batched(
             batch_preprocs.append(preproc)
 
     if batch_prompts:
-        raw_outputs = generate_batched_from_formatted_prompts(
-            model=judge_model,
-            tokenizer=judge_tokenizer,
-            prompts=batch_prompts,
-            device=device,
-            lora_path=judge_lora_path,
-            generation_kwargs=generation_kwargs,
-        )
-        for idx, raw_output, preproc in zip(batch_indices, raw_outputs, batch_preprocs):
-            parsed = _parse_judge_output(raw_output, judge_thinking_tag)
-            parsed["valid_response_format"] = preproc["valid_response_format"]
-            results[idx] = parsed
+        if item_ids is None:
+            item_ids = [str(idx) for idx in batch_indices]
+        if len(item_ids) != len(batch_prompts):
+            raise ValueError("item_ids must match the number of judge prompts.")
+
+        base_max_new_tokens = int(generation_kwargs.get("max_new_tokens", 1000))
+        pending_positions = list(range(len(batch_prompts)))
+
+        for attempt in range(malformed_retry_attempts + 1):
+            if not pending_positions:
+                break
+
+            if attempt == 0:
+                run_kwargs = dict(generation_kwargs)
+            else:
+                run_kwargs = dict(generation_kwargs)
+                run_kwargs["max_new_tokens"] = max(base_max_new_tokens + 1, base_max_new_tokens * (2**attempt))
+                print(
+                    f"[{stage_label}] judge retry {attempt}/{malformed_retry_attempts}: "
+                    f"count={len(pending_positions)} max_new_tokens={run_kwargs['max_new_tokens']}"
+                )
+
+            run_prompts = [batch_prompts[pos] for pos in pending_positions]
+            run_outputs = generate_batched_from_formatted_prompts(
+                model=judge_model,
+                tokenizer=judge_tokenizer,
+                prompts=run_prompts,
+                device=device,
+                lora_path=judge_lora_path,
+                generation_kwargs=run_kwargs,
+            )
+
+            next_pending: list[int] = []
+            for pos, raw_output in zip(pending_positions, run_outputs, strict=True):
+                idx = batch_indices[pos]
+                preproc = batch_preprocs[pos]
+                parsed = _parse_judge_output(raw_output, judge_thinking_tag)
+                parsed["valid_response_format"] = preproc["valid_response_format"]
+                results[idx] = parsed
+                if (
+                    judge_thinking_tag is not None
+                    and parsed.get("valid_judge_format") is False
+                    and str(parsed.get("reason", "")).startswith("Judge output had malformed thinking tags.")
+                ):
+                    next_pending.append(pos)
+            pending_positions = next_pending
+
+        if pending_positions:
+            for pos in pending_positions:
+                idx = batch_indices[pos]
+                parsed = results[idx] if isinstance(results[idx], dict) else {}
+                reason = str(parsed.get("reason", "unknown judge failure"))
+                print(
+                    f"[{stage_label}] judge failure item={item_ids[pos]} "
+                    f"reason={reason}"
+                )
+
+        for pos, idx in enumerate(batch_indices):
+            parsed = results[idx] if isinstance(results[idx], dict) else {}
+            if (
+                parsed.get("valid_judge_format") is False
+                and not str(parsed.get("reason", "")).startswith("Judge output had malformed thinking tags.")
+            ):
+                print(
+                    f"[{stage_label}] judge failure item={item_ids[pos]} "
+                    f"reason={parsed.get('reason', 'invalid judge format')}"
+                )
+
+    if emit_summary_log:
+        finalized = [item for item in results if isinstance(item, dict)]
+        print(f"[{stage_label}] judge summary: {_judge_summary_line(finalized)}")
 
     return results
 
@@ -466,6 +535,10 @@ def generate_target_rollouts(
         if is_main:
             print(msg)
 
+    maybe_log(
+        f"[target rollout cache] hits={len(entries)} missing={missing} requested_total={num_rollouts}"
+    )
+
     def generate_local_valid_rollouts(target_valid_count: int) -> tuple[list[dict[str, Any]], int]:
         if target_valid_count <= 0:
             return [], 0
@@ -482,8 +555,8 @@ def generate_target_rollouts(
             pbar.set_postfix(generated=total_generated_local, batch=batch_size)
             if is_main:
                 tqdm.write(
-                    f"[target rollout debug] starting generation: batch_size={batch_size}, "
-                    f"local_valid={len(local_entries)}, local_target={target_valid_count}"
+                    f"[target rollout debug] sampling uncached rollouts: batch_size={batch_size}, "
+                    f"local_valid={len(local_entries)}, local_target_missing={target_valid_count}"
                 )
 
             gen_t0 = perf_counter()
@@ -522,8 +595,8 @@ def generate_target_rollouts(
             total_generated_local += len(responses)
             if is_main:
                 tqdm.write(
-                    f"[target rollout debug] generated {len(responses)} responses in {gen_elapsed:.2f}s "
-                    f"(batch_size={batch_size}, local_generated={total_generated_local})"
+                    f"[target rollout debug] sampled {len(responses)} NEW responses in {gen_elapsed:.2f}s "
+                    f"(batch_size={batch_size}, local_generated_new={total_generated_local})"
                 )
 
             valid_added = 0
@@ -623,7 +696,6 @@ def judge_target_rollouts(
     device: torch.device,
     target_model_name: str,
     target_lora_path: str | None,
-    generation_kwargs_stochastic: dict[str, Any],
     judge_lora_path: str | None = "default",
     cache_root: str = "cache",
     judge_generation_kwargs: dict[str, Any] | None = None,
@@ -640,7 +712,7 @@ def judge_target_rollouts(
         target_lora_path=target_lora_path,
         judge_model_name=judge_model.config._name_or_path,
         judge_lora_path=judge_lora_path,
-        generation_kwargs=generation_kwargs_stochastic,
+        generation_kwargs=judge_generation_kwargs,
         judge_instruction_stem=judge_instruction_stem,
         user_prompt=user_prompt,
     )
@@ -680,7 +752,7 @@ def judge_target_rollouts(
             if i % dist_ctx.world_size == dist_ctx.rank
         ]
 
-    batch_prompts: list[str] = []
+    batch_responses: list[str] = []
     batch_rollouts: list[dict[str, Any]] = []
     local_judged_entries: list[dict[str, Any]] = []
     for entry in local_rollouts:
@@ -707,19 +779,15 @@ def judge_target_rollouts(
             )
             continue
 
-        judge_instruction = judge_instruction_template.format(
-            user_prompt=user_prompt,
-            model_response=parsed_target_response,
-        )
-        batch_prompts.append(format_user_target_prompt(judge_tokenizer, judge_instruction))
+        batch_responses.append(parsed_target_response)
         batch_rollouts.append(entry)
 
-    if batch_prompts:
+    if batch_responses:
         with (
             perf.track(
                 "rollout/judge_generate",
                 {
-                    "batch_size": len(batch_prompts),
+                    "batch_size": len(batch_responses),
                     "judge_max_new_tokens": judge_generation_kwargs.get("max_new_tokens"),
                     "rank": rank,
                     "world_size": world_size,
@@ -729,21 +797,28 @@ def judge_target_rollouts(
             else nullcontext()
         ) as judge_metrics:
             judge_t0 = perf_counter()
-            raw_outputs = generate_batched_from_formatted_prompts(
-                model=judge_model,
-                tokenizer=judge_tokenizer,
-                prompts=batch_prompts,
+            parsed_judgments = score_responses_compliance_batched(
+                judge_model=judge_model,
+                judge_tokenizer=judge_tokenizer,
+                user_prompt=user_prompt,
+                target_responses=batch_responses,
+                judge_instruction_template=judge_instruction_template,
                 device=device,
-                lora_path=judge_lora_path,
+                judge_lora_path=judge_lora_path,
                 generation_kwargs=judge_generation_kwargs,
+                target_thinking_tag=None,
+                judge_thinking_tag=judge_thinking_tag,
+                emit_summary_log=False,
+                stage_label="target judging",
+                item_ids=[f"rollout_index={int(entry['rollout_index'])}" for entry in batch_rollouts],
+                malformed_retry_attempts=3,
             )
             if perf:
                 elapsed = max(perf_counter() - judge_t0, 1e-12)
-                judge_metrics["throughput/judgments_per_second"] = float(len(raw_outputs)) / elapsed
-                judge_metrics["perf/seconds_per_judgment"] = elapsed / max(1, len(raw_outputs))
+                judge_metrics["throughput/judgments_per_second"] = float(len(parsed_judgments)) / elapsed
+                judge_metrics["perf/seconds_per_judgment"] = elapsed / max(1, len(parsed_judgments))
 
-        for entry, raw_output in zip(batch_rollouts, raw_outputs, strict=True):
-            parsed_judge = _parse_judge_output(raw_output, judge_thinking_tag)
+        for entry, parsed_judge in zip(batch_rollouts, parsed_judgments, strict=True):
             compliance = {
                 **parsed_judge,
                 "judge_instruction_file": judge_instruction_file,
@@ -757,6 +832,8 @@ def judge_target_rollouts(
                     "compliance": compliance,
                 }
             )
+        parsed_for_summary = [entry["compliance"] for entry in local_judged_entries]
+        print(f"[target judging] judge summary: {_judge_summary_line(parsed_for_summary)}")
 
     if dist_ctx is not None and dist_ctx.enabled:
         gathered = all_gather_objects(dist_ctx, local_judged_entries)

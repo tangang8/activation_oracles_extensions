@@ -1,0 +1,100 @@
+_wandb:
+    value:
+        cli_version: 0.21.1
+        e:
+            97cdyx3i4522j11xvwu81ve4wfxdphir:
+                codePath: bypass_refusal.py
+                codePathLocal: bypass_refusal.py
+                cpu_count: 64
+                cpu_count_logical: 128
+                cudaVersion: "12.8"
+                disk:
+                    /:
+                        total: "215822106624"
+                        used: "38342004736"
+                executable: /workspace/.venv/bin/python
+                git:
+                    commit: de898154f0111778e0b6a23f4339b21edd6473ba
+                    remote: git@github.com:tangang8/activation_oracles_extensions
+                gpu: NVIDIA A100-SXM4-80GB
+                gpu_count: 1
+                gpu_nvidia:
+                    - architecture: Ampere
+                      cudaCores: 6912
+                      memoryTotal: "85899345920"
+                      name: NVIDIA A100-SXM4-80GB
+                      uuid: GPU-16838994-bb08-1cdd-974e-87268f815ae8
+                host: 8b43a4de0008
+                memory:
+                    total: "1487891054592"
+                os: Linux-5.15.0-160-generic-x86_64-with-glibc2.39
+                program: /workspace/activation_oracles_extensions/bypass_refusal.py
+                python: CPython 3.12.3
+                root: /workspace/activation_oracles_extensions
+                startedAt: "2026-05-21T05:34:58.700096Z"
+                writerId: 97cdyx3i4522j11xvwu81ve4wfxdphir
+        m: []
+        python_version: 3.12.3
+        t:
+            "1":
+                - 1
+                - 11
+                - 41
+                - 49
+                - 51
+                - 71
+                - 98
+                - 105
+            "2":
+                - 1
+                - 11
+                - 41
+                - 49
+                - 51
+                - 71
+                - 98
+                - 105
+            "3":
+                - 16
+                - 61
+            "4": 3.12.3
+            "5": 0.21.1
+            "6": 4.55.2
+            "10":
+                - 20
+            "12": 0.21.1
+            "13": linux-x86_64
+device:
+    value: cuda
+distributed_enabled:
+    value: false
+dtype:
+    value: torch.bfloat16
+judge_instruction_file:
+    value: user_request_fulfillment.jinja2
+max_new_tokens:
+    value: 10000
+model_name:
+    value: Qwen/Qwen3-8B
+num_rollouts:
+    value: 50
+oracle_eval_batch_size:
+    value: 32
+oracle_lora_path:
+    value: adamkarvonen/checkpoints_latentqa_cls_past_lens_addition_Qwen3-8B
+oracle_max_new_tokens:
+    value: 1000
+oracle_pipeline_mode:
+    value: deterministic
+oracle_prompts_path:
+    value: /workspace/activation_oracles_extensions/prompts/oracle_prompts/default_oracle_prompts.json
+oracle_prompts_total:
+    value: 1
+rank_zero_device:
+    value: cuda
+target_prompt_limit:
+    value: 100
+target_prompts_total:
+    value: 100
+world_size:
+    value: 1

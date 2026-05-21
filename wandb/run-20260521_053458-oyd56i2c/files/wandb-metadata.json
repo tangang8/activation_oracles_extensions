@@ -1,0 +1,39 @@
+{
+  "os": "Linux-5.15.0-160-generic-x86_64-with-glibc2.39",
+  "python": "CPython 3.12.3",
+  "startedAt": "2026-05-21T05:34:58.700096Z",
+  "program": "/workspace/activation_oracles_extensions/bypass_refusal.py",
+  "codePath": "bypass_refusal.py",
+  "codePathLocal": "bypass_refusal.py",
+  "git": {
+    "remote": "git@github.com:tangang8/activation_oracles_extensions",
+    "commit": "de898154f0111778e0b6a23f4339b21edd6473ba"
+  },
+  "root": "/workspace/activation_oracles_extensions",
+  "host": "8b43a4de0008",
+  "executable": "/workspace/.venv/bin/python",
+  "cpu_count": 64,
+  "cpu_count_logical": 128,
+  "gpu": "NVIDIA A100-SXM4-80GB",
+  "gpu_count": 1,
+  "disk": {
+    "/": {
+      "total": "215822106624",
+      "used": "38342004736"
+    }
+  },
+  "memory": {
+    "total": "1487891054592"
+  },
+  "gpu_nvidia": [
+    {
+      "name": "NVIDIA A100-SXM4-80GB",
+      "memoryTotal": "85899345920",
+      "cudaCores": 6912,
+      "architecture": "Ampere",
+      "uuid": "GPU-16838994-bb08-1cdd-974e-87268f815ae8"
+    }
+  ],
+  "cudaVersion": "12.8",
+  "writerId": "97cdyx3i4522j11xvwu81ve4wfxdphir"
+}

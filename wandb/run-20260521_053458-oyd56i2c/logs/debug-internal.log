@@ -1,0 +1,12 @@
+{"time":"2026-05-21T05:34:58.923273206Z","level":"INFO","msg":"stream: starting","core version":"0.21.1"}
+{"time":"2026-05-21T05:35:04.202570971Z","level":"INFO","msg":"stream: created new stream","id":"oyd56i2c"}
+{"time":"2026-05-21T05:35:04.202663871Z","level":"INFO","msg":"stream: started","id":"oyd56i2c"}
+{"time":"2026-05-21T05:35:04.202742542Z","level":"INFO","msg":"writer: started","stream_id":"oyd56i2c"}
+{"time":"2026-05-21T05:35:04.202765872Z","level":"INFO","msg":"sender: started","stream_id":"oyd56i2c"}
+{"time":"2026-05-21T05:35:04.202828372Z","level":"INFO","msg":"handler: started","stream_id":"oyd56i2c"}
+{"time":"2026-05-21T05:39:50.093403057Z","level":"INFO","msg":"api: retrying error","error":"Post \"https://api.wandb.ai/graphql\": read tcp 172.17.0.2:46006->34.8.250.101:443: read: connection reset by peer"}
+{"time":"2026-05-21T05:46:37.229506795Z","level":"INFO","msg":"stream: closing","id":"oyd56i2c"}
+{"time":"2026-05-21T05:46:42.599003682Z","level":"INFO","msg":"fileTransfer: Close: file transfer manager closed"}
+{"time":"2026-05-21T05:46:47.966314424Z","level":"INFO","msg":"handler: closed","stream_id":"oyd56i2c"}
+{"time":"2026-05-21T05:46:47.966568125Z","level":"INFO","msg":"sender: closed","stream_id":"oyd56i2c"}
+{"time":"2026-05-21T05:46:47.966662415Z","level":"INFO","msg":"stream: closed","id":"oyd56i2c"}

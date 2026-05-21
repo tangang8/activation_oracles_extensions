@@ -1,0 +1,22 @@
+2026-05-21 06:09:27,112 INFO    MainThread:39983 [wandb_setup.py:_flush():80] Current SDK version is 0.21.1
+2026-05-21 06:09:27,112 INFO    MainThread:39983 [wandb_setup.py:_flush():80] Configure stats pid to 39983
+2026-05-21 06:09:27,112 INFO    MainThread:39983 [wandb_setup.py:_flush():80] Loading settings from /root/.config/wandb/settings
+2026-05-21 06:09:27,112 INFO    MainThread:39983 [wandb_setup.py:_flush():80] Loading settings from /workspace/activation_oracles_extensions/wandb/settings
+2026-05-21 06:09:27,112 INFO    MainThread:39983 [wandb_setup.py:_flush():80] Loading settings from environment variables
+2026-05-21 06:09:27,112 INFO    MainThread:39983 [wandb_init.py:setup_run_log_directory():703] Logging user logs to /workspace/activation_oracles_extensions/wandb/run-20260521_060927-b0276xkx/logs/debug.log
+2026-05-21 06:09:27,112 INFO    MainThread:39983 [wandb_init.py:setup_run_log_directory():704] Logging internal logs to /workspace/activation_oracles_extensions/wandb/run-20260521_060927-b0276xkx/logs/debug-internal.log
+2026-05-21 06:09:27,112 INFO    MainThread:39983 [wandb_init.py:init():830] calling init triggers
+2026-05-21 06:09:27,112 INFO    MainThread:39983 [wandb_init.py:init():835] wandb.init called with sweep_config: {}
+config: {'model_name': 'Qwen/Qwen3-8B', 'oracle_lora_path': 'adamkarvonen/checkpoints_latentqa_cls_past_lens_addition_Qwen3-8B', 'num_rollouts': 50, 'dtype': 'torch.bfloat16', 'device': 'cuda', 'world_size': 1, 'rank_zero_device': 'cuda', 'distributed_enabled': False, 'max_new_tokens': 10000, 'oracle_max_new_tokens': 1000, 'oracle_eval_batch_size': 32, 'oracle_judge_batch_size': 8, 'judge_instruction_file': 'user_request_fulfillment.jinja2', 'target_prompt_limit': 100, 'target_prompts_total': 100, 'oracle_prompts_path': '/workspace/activation_oracles_extensions/prompts/oracle_prompts/default_oracle_prompts.json', 'oracle_prompts_total': 1, 'oracle_pipeline_mode': 'deterministic', '_wandb': {}}
+2026-05-21 06:09:27,112 INFO    MainThread:39983 [wandb_init.py:init():871] starting backend
+2026-05-21 06:09:27,324 INFO    MainThread:39983 [wandb_init.py:init():874] sending inform_init request
+2026-05-21 06:09:27,329 INFO    MainThread:39983 [wandb_init.py:init():882] backend started and connected
+2026-05-21 06:09:27,331 INFO    MainThread:39983 [wandb_init.py:init():953] updated telemetry
+2026-05-21 06:09:27,340 INFO    MainThread:39983 [wandb_init.py:init():977] communicating run to backend with 90.0 second timeout
+2026-05-21 06:09:32,893 INFO    MainThread:39983 [wandb_init.py:init():1029] starting run threads in backend
+2026-05-21 06:09:33,056 INFO    MainThread:39983 [wandb_run.py:_console_start():2494] atexit reg
+2026-05-21 06:09:33,056 INFO    MainThread:39983 [wandb_run.py:_redirect():2342] redirect: wrap_raw
+2026-05-21 06:09:33,056 INFO    MainThread:39983 [wandb_run.py:_redirect():2411] Wrapping output streams.
+2026-05-21 06:09:33,056 INFO    MainThread:39983 [wandb_run.py:_redirect():2434] Redirects installed.
+2026-05-21 06:09:33,058 INFO    MainThread:39983 [wandb_init.py:init():1075] run started, returning control to user process
+2026-05-21 06:14:46,152 INFO    MsgRouterThr:39983 [mailbox.py:close():129] [no run ID] Closing mailbox, abandoning 1 handles.

@@ -94,6 +94,48 @@ def _named_token_point_responses(result: dict[str, Any]) -> dict[str, list[Any]]
     return resolved
 
 
+def _compliance_stats(entries: list[dict[str, Any]]) -> dict[str, dict[str, float]]:
+    stats: dict[str, dict[str, float]] = {}
+
+    def add(probe_kind: str, leaf: Any) -> None:
+        bucket = stats.setdefault(
+            probe_kind,
+            {"count": 0.0, "scored": 0.0, "sum_score": 0.0, "skipped": 0.0, "valid_format": 0.0},
+        )
+        if not isinstance(leaf, dict):
+            return
+        bucket["count"] += 1.0
+        score = leaf.get("score")
+        if isinstance(score, int):
+            bucket["scored"] += 1.0
+            bucket["sum_score"] += float(score)
+        if bool(leaf.get("judge_skipped")):
+            bucket["skipped"] += 1.0
+        if leaf.get("valid_judge_format") is True:
+            bucket["valid_format"] += 1.0
+
+    for entry in entries:
+        compliance = entry.get("compliance", {})
+        if not isinstance(compliance, dict):
+            continue
+        for probe_kind in ("full_seq", "segment", "prompt_segment", "rollout_segment"):
+            add(probe_kind, compliance.get(probe_kind))
+        for probe_kind in ("tokens", "token_points"):
+            container = compliance.get(probe_kind, {})
+            if not isinstance(container, dict):
+                continue
+            for leaf in container.values():
+                add(probe_kind, leaf)
+    return stats
+
+
+def _leaf_cell(leaf: Any, field: str, default: str = "") -> str:
+    if not isinstance(leaf, dict):
+        return default
+    value = leaf.get(field, default)
+    return html.escape(str(value))
+
+
 def save_rollouts_html(
     rollout_entries: list[dict[str, Any]],
     compliance_results: dict[str, Any],
@@ -153,6 +195,149 @@ def save_oracle_rollouts_html(
 ) -> Path:
     results = oracle_results if isinstance(oracle_results, list) else [oracle_results]
     out_path = _resolve_output_path(output_path)
+
+    deterministic_schema = bool(results) and isinstance(results[0], dict) and "oracle_response" in results[0]
+    if deterministic_schema:
+        token_viz_html = "<em>No oracle results available.</em>"
+        if results:
+            first_points = results[0].get("oracle_points", {}).get("token_points", {})
+            first_text = results[0].get("oracle_points", {}).get("combined_text", "")
+            if isinstance(first_points, dict) and first_text:
+                token_viz_html = _build_token_visualization_html(
+                    input_text=first_text,
+                    tokenizer=tokenizer,
+                    token_points=first_points,
+                )
+
+        stats = _compliance_stats(results)
+        summary_rows = []
+        for probe_kind in sorted(stats.keys()):
+            bucket = stats[probe_kind]
+            scored = bucket["scored"]
+            avg_score = (bucket["sum_score"] / scored) if scored > 0 else 0.0
+            summary_rows.append(
+                "<tr>"
+                f"<td>{html.escape(probe_kind)}</td>"
+                f"<td>{int(bucket['count'])}</td>"
+                f"<td>{int(scored)}</td>"
+                f"<td>{avg_score:.3f}</td>"
+                f"<td>{int(bucket['skipped'])}</td>"
+                f"<td>{int(bucket['valid_format'])}</td>"
+                "</tr>"
+            )
+        summary_table = (
+            "<table><thead><tr>"
+            "<th>Probe Kind</th><th>Total</th><th>Scored</th><th>Avg Score</th><th>Skipped</th><th>Valid Format</th>"
+            f"</tr></thead><tbody>{''.join(summary_rows) or '<tr><td colspan=\"6\"><em>No compliance data</em></td></tr>'}</tbody></table>"
+        )
+
+        cards = []
+        for i, entry in enumerate(results):
+            rollout_index = entry.get("rollout_index", i)
+            target_format = entry.get("target_format", {})
+            oracle_response = entry.get("oracle_response", {})
+            oracle_format = entry.get("oracle_format", {})
+            compliance = entry.get("compliance", {})
+
+            scalar_probe_sections = []
+            for probe_kind in ("full_seq", "segment", "prompt_segment", "rollout_segment"):
+                response_text = oracle_response.get(probe_kind, "")
+                format_leaf = oracle_format.get(probe_kind, {})
+                compliance_leaf = compliance.get(probe_kind, {})
+                scalar_probe_sections.append(
+                    "<details>"
+                    f"<summary>{html.escape(probe_kind)}</summary>"
+                    f"<p><strong>Score:</strong> {_leaf_cell(compliance_leaf, 'score', 'None')} | "
+                    f"<strong>Reason:</strong> {_leaf_cell(compliance_leaf, 'reason')}</p>"
+                    f"<p><strong>Judge Response:</strong> {_leaf_cell(compliance_leaf, 'response_only')}</p>"
+                    f"<p><strong>Judge Thinking:</strong> {_leaf_cell(compliance_leaf, 'thinking')}</p>"
+                    f"<p><strong>Oracle Response (parsed):</strong> {_leaf_cell(format_leaf, 'response_only', str(response_text))}</p>"
+                    f"<details><summary>Oracle Response Raw</summary><pre>{html.escape(str(response_text))}</pre></details>"
+                    "</details>"
+                )
+
+            token_rows = []
+            token_responses = oracle_response.get("token_points", {})
+            token_formats = oracle_format.get("token_points", {})
+            token_compliance = compliance.get("token_points", {})
+            if isinstance(token_responses, dict):
+                for name, response_text in token_responses.items():
+                    key = str(name)
+                    format_leaf = token_formats.get(key, {}) if isinstance(token_formats, dict) else {}
+                    compliance_leaf = token_compliance.get(key, {}) if isinstance(token_compliance, dict) else {}
+                    token_rows.append(
+                        "<tr>"
+                        f"<td>{html.escape(key)}</td>"
+                        f"<td>{html.escape(str(response_text))}</td>"
+                        f"<td>{_leaf_cell(format_leaf, 'response_only')}</td>"
+                        f"<td>{_leaf_cell(compliance_leaf, 'score', 'None')}</td>"
+                        f"<td>{_leaf_cell(compliance_leaf, 'reason')}</td>"
+                        "</tr>"
+                    )
+            token_table = "".join(token_rows) or "<tr><td colspan='5'><em>No token-point responses</em></td></tr>"
+
+            cards.append(
+                f"""
+                <section class="card" data-rollout="{rollout_index}">
+                  <h2>Rollout {html.escape(str(rollout_index))}</h2>
+                  <details open><summary>Target Parsed Response</summary><pre>{html.escape(str(target_format.get("response_only", "")))}</pre></details>
+                  <details><summary>Target Thinking</summary><pre>{html.escape(str(target_format.get("thinking", "")))}</pre></details>
+                  {''.join(scalar_probe_sections)}
+                  <details><summary>Token-Point Compliance</summary>
+                    <table>
+                      <thead><tr><th>Name</th><th>Oracle Response</th><th>Oracle Parsed</th><th>Score</th><th>Reason</th></tr></thead>
+                      <tbody>{token_table}</tbody>
+                    </table>
+                  </details>
+                </section>
+                """
+            )
+
+        page_html = f"""<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <title>Oracle Rollouts Report</title>
+  <style>
+    body {{ font-family: sans-serif; margin: 24px; background: #fafafa; }}
+    .controls {{ margin-bottom: 16px; }}
+    .card {{ background: white; border: 1px solid #ddd; border-radius: 8px; padding: 16px; margin-bottom: 14px; }}
+    pre {{ white-space: pre-wrap; word-break: break-word; background: #f6f8fa; padding: 10px; border-radius: 6px; }}
+    table {{ border-collapse: collapse; width: 100%; margin-top: 8px; }}
+    th, td {{ border: 1px solid #ddd; padding: 8px; vertical-align: top; }}
+  </style>
+</head>
+<body>
+  <h1>Oracle Rollouts Report</h1>
+  <p><strong>Oracle prompt:</strong> {html.escape(oracle_prompt)}</p>
+  <h2>Compliance Summary</h2>
+  {summary_table}
+  <h2>Token Visualization (Rollout 0)</h2>
+  {token_viz_html}
+  <div class="controls">
+    <label>Show rollout index:
+      <select id="rolloutSelect">
+        <option value="all">All</option>
+        {"".join(f"<option value='{html.escape(str(entry.get('rollout_index', i)))}'>{html.escape(str(entry.get('rollout_index', i)))}</option>" for i, entry in enumerate(results))}
+      </select>
+    </label>
+  </div>
+  {''.join(cards)}
+  <script>
+    const select = document.getElementById('rolloutSelect');
+    select.addEventListener('change', () => {{
+      const value = select.value;
+      for (const card of document.querySelectorAll('.card')) {{
+        const match = value === 'all' || card.dataset.rollout === value;
+        card.style.display = match ? 'block' : 'none';
+      }}
+    }});
+  </script>
+</body>
+</html>"""
+
+        out_path.write_text(page_html, encoding="utf-8")
+        return out_path
 
     token_viz_html = "<em>No oracle results available.</em>"
     if results:

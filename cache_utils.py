@@ -165,6 +165,96 @@ def oracle_cache_file_path(
     )
 
 
+def deterministic_oracle_cache_file_path(
+    cache_root: str,
+    target_model_name: str,
+    target_lora_path: str | None,
+    oracle_model_name: str,
+    oracle_lora_path: str | None,
+    oracle_generation_kwargs: dict[str, Any],
+    target_prompt: str,
+    oracle_prompt: str,
+) -> Path:
+    """
+    Build deterministic oracle rollout cache file path.
+
+    Layout:
+      cache/target_{target_model}[_lora-{target_lora}]/
+      oracle_rollouts_temp-{temperature}/oracle_{oracle_model}[_lora-{oracle_lora}]/
+      {target_prompt_preview_hash}/{oracle_prompt_preview_hash}.json
+    """
+    target_dir = _model_bundle_dir("target", target_model_name, target_lora_path or "default")
+    oracle_rollouts_dir = _rollouts_dir_name("oracle_rollouts", oracle_generation_kwargs)
+    oracle_run_subdir = _run_subdir_path(
+        role_prefix="oracle",
+        model_name=oracle_model_name,
+        lora_path=oracle_lora_path,
+    )
+    target_prompt_dir = _preview_hash_name(target_prompt)
+    oracle_file = f"{_preview_hash_name(oracle_prompt)}.json"
+    return (
+        Path(cache_root)
+        / target_dir
+        / oracle_rollouts_dir
+        / oracle_run_subdir
+        / target_prompt_dir
+        / oracle_file
+    )
+
+
+def deterministic_oracle_judge_cache_file_path(
+    cache_root: str,
+    target_model_name: str,
+    target_lora_path: str | None,
+    judge_model_name: str,
+    judge_lora_path: str | None,
+    judge_generation_kwargs: dict[str, Any],
+    judge_instruction_stem: str,
+    oracle_model_name: str,
+    oracle_lora_path: str | None,
+    oracle_generation_kwargs: dict[str, Any],
+    target_prompt: str,
+    oracle_prompt: str,
+) -> Path:
+    """
+    Build judged deterministic oracle rollout cache file path.
+
+    Layout:
+      cache/target_{target_model}[_lora-{target_lora}]/
+      judge_{judge_model}[_lora-{judge_lora}]_temp-{temperature}/
+      {judge_instruction_stem}/oracle_rollouts_judged/
+      oracle_rollouts_temp-{temperature}/oracle_{oracle_model}[_lora-{oracle_lora}]/
+      {target_prompt_preview_hash}/{oracle_prompt_preview_hash}.json
+    """
+    target_dir = _model_bundle_dir("target", target_model_name, target_lora_path or "default")
+    judge_dir = _run_subdir_path(
+        role_prefix="judge",
+        model_name=judge_model_name,
+        lora_path=judge_lora_path,
+    )
+    judge_temp = judge_generation_kwargs.get("temperature")
+    judge_temp_dir = Path(f"{judge_dir}_temp-{judge_temp}")
+    oracle_rollouts_dir = _rollouts_dir_name("oracle_rollouts", oracle_generation_kwargs)
+    oracle_run_subdir = _run_subdir_path(
+        role_prefix="oracle",
+        model_name=oracle_model_name,
+        lora_path=oracle_lora_path,
+    )
+    target_prompt_dir = _preview_hash_name(target_prompt)
+    oracle_file = f"{_preview_hash_name(oracle_prompt)}.json"
+    return (
+        Path(cache_root)
+        / target_dir
+        / judge_temp_dir
+        / _sanitize_for_path(judge_instruction_stem)
+        / "oracle_rollouts_judged"
+        / oracle_rollouts_dir
+        / oracle_run_subdir
+        / target_prompt_dir
+        / oracle_file
+    )
+
+
 def load_json(cache_file: Path) -> Any | None:
     if not cache_file.exists():
         return None

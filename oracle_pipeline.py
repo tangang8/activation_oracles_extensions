@@ -466,9 +466,22 @@ def run_oracle_batched(
         f"[oracle cache] targets={len(cache_status_by_target)} "
         f"requested_repeats={oracle_repeats} full_hits={full_hits} partial_hits={partial_hits} misses={misses}"
     )
-    for target_idx, cached_count, missing_count in cache_status_by_target:
-        if missing_count > 0:
-            maybe_log(f"[oracle cache] target_idx={target_idx}: cached={cached_count}, missing={missing_count}")
+    missing_status = [
+        (target_idx, cached_count, missing_count)
+        for target_idx, cached_count, missing_count in cache_status_by_target
+        if missing_count > 0
+    ]
+    if missing_status:
+        preview = ", ".join(
+            f"{idx}(cached={cached},missing={missing})"
+            for idx, cached, missing in missing_status[:10]
+        )
+        if len(missing_status) > 10:
+            maybe_log(
+                f"[oracle cache] missing targets: {len(missing_status)} total; first 10 -> {preview}"
+            )
+        else:
+            maybe_log(f"[oracle cache] missing targets ({len(missing_status)}): {preview}")
 
     missing_indices = [i for i, cached_count in enumerate(cached_counts_by_target) if cached_count < oracle_repeats]
     if not missing_indices:

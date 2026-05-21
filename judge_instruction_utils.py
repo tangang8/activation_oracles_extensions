@@ -3,16 +3,26 @@ from __future__ import annotations
 from pathlib import Path
 
 
-INSTRUCTIONS_DIR = Path(__file__).resolve().parent / "judge_classification_instructions"
+_ROOT = Path(__file__).resolve().parent
+INSTRUCTIONS_DIRS = [
+    _ROOT / "prompts" / "judge_classification_instructions",
+    _ROOT / "judge_classification_instructions",
+]
 
 
 def load_judge_instruction(path_or_name: str) -> tuple[str, str, str]:
     candidate = Path(path_or_name)
     if not candidate.is_absolute():
         if candidate.parent == Path("."):
-            candidate = INSTRUCTIONS_DIR / candidate
+            resolved = None
+            for instructions_dir in INSTRUCTIONS_DIRS:
+                maybe = instructions_dir / candidate
+                if maybe.exists():
+                    resolved = maybe
+                    break
+            candidate = resolved if resolved is not None else INSTRUCTIONS_DIRS[0] / candidate
         else:
-            candidate = (Path(__file__).resolve().parent / candidate).resolve()
+            candidate = (_ROOT / candidate).resolve()
     if not candidate.exists():
         raise FileNotFoundError(f"Judge instruction file not found: {candidate}")
 
