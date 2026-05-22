@@ -17,7 +17,7 @@ def load_tokenizer(model_name: str, hf_token: str | None = None):
     kwargs = {"token": hf_token} if hf_token else {}
     tokenizer = AutoTokenizer.from_pretrained(model_name, **kwargs)
     tokenizer.padding_side = "left"
-    if not tokenizer.pad_token_id:
+    if tokenizer.pad_token_id is None:
         tokenizer.pad_token_id = tokenizer.eos_token_id
     return tokenizer
 

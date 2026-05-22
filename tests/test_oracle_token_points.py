@@ -24,6 +24,10 @@ class _FakeTokenizer:
             ids = [11, 12, 13]
         elif text == "promptrollout":
             ids = [11, 12, 13, 21, 22]
+        elif text == "qwen_prompt":
+            ids = [31, 10, 41, 20, 30, 99]
+        elif text == "qwen_promptqwen_response":
+            ids = [31, 10, 41, 20, 30, 99, 50, 77, 88]
         else:
             ids = [31, 10, 41, 20, 30, 99]
         return {"input_ids": [_FakeTensor(ids)]}
@@ -39,6 +43,15 @@ class _FakeTokenizer:
         return mapping[text]
 
 
+class _BoundaryUnstableTokenizer(_FakeTokenizer):
+    def __call__(self, text, return_tensors, add_special_tokens):
+        if text == "promptrollout":
+            return {"input_ids": [_FakeTensor([11, 12, 99, 21, 22])]}
+        if text == "qwen_promptqwen_response":
+            return {"input_ids": [_FakeTensor([31, 10, 41, 20, 99, 50, 77, 88])]}
+        return super().__call__(text, return_tensors, add_special_tokens)
+
+
 @unittest.skipIf(otp is None, "oracle_token_points dependencies unavailable")
 class OracleTokenPointsTests(unittest.TestCase):
     def test_preview_combined_default(self):
@@ -47,6 +60,29 @@ class OracleTokenPointsTests(unittest.TestCase):
         self.assertEqual(spec["prompt_segment"], (0, 3))
         self.assertEqual(spec["rollout_segment"], (3, 5))
         self.assertEqual(set(spec["token_points"].keys()), {"last_prompt_token", "first_rollout_token", "last_rollout_token"})
+
+    def test_combined_default_rejects_unstable_boundary(self):
+        tok = _BoundaryUnstableTokenizer()
+        with self.assertRaisesRegex(ValueError, "prompt/response boundary is unstable"):
+            otp.extract_token_points_combined_default(tok, "prompt", "rollout")
+
+    def test_combined_spec_rejects_unstable_boundary(self):
+        tok = _BoundaryUnstableTokenizer()
+        with self.assertRaisesRegex(ValueError, "prompt/response boundary is unstable"):
+            otp.build_combined_points_spec(tok, "prompt", "rollout")
+
+    def test_combined_qwen_rejects_unstable_boundary(self):
+        tok = _BoundaryUnstableTokenizer()
+        with self.assertRaisesRegex(ValueError, "prompt/response boundary is unstable"):
+            otp.extract_token_points_combined_qwen(tok, "qwen_prompt", "qwen_response")
+
+    def test_preview_combined_qwen(self):
+        tok = _FakeTokenizer()
+        spec = otp.extract_token_points_combined_qwen(tok, "qwen_prompt", "qwen_response")
+        self.assertEqual(spec["prompt_segment"], (0, 6))
+        self.assertEqual(spec["rollout_segment"], (6, 9))
+        self.assertEqual(spec["token_points"]["first_rollout_token"], 6)
+        self.assertEqual(spec["token_points"]["first_token_after_think_close"], 7)
 
     def test_prompt_only_default(self):
         tok = _FakeTokenizer()

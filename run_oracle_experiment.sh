@@ -66,12 +66,15 @@ oracle_mode="all_target_deterministic"       # ORACLE_ROLLOUT_MODE: all_target_d
 num_rollouts=50                              # NUM_ROLLOUTS: number of target rollouts to generate.
 k_rollouts=10                                # K_ROLLOUTS: max target rollouts selected for sampled oracle mode.
 num_oracle_rollouts=1                        # NUM_ORACLE_ROLLOUTS: oracle repeats per selected target (or prompt-only repeats).
+target_prompt_offset=0                       # TARGET_PROMPT_OFFSET: dataset offset before selecting target prompts.
 target_prompt_limit=1                        # TARGET_PROMPT_LIMIT: how many target prompts to load.
 max_new_tokens=10000                         # MAX_NEW_TOKENS: generation cap for target rollout stage.
 oracle_max_new_tokens=1000                   # ORACLE_MAX_NEW_TOKENS: generation cap for oracle rollout stage.
 oracle_eval_batch_size=32                    # ORACLE_EVAL_BATCH_SIZE: batch size for oracle rollout generation.
 oracle_judge_batch_size=16                    # ORACLE_JUDGE_BATCH_SIZE: batch size for oracle judging stage.
 target_judge_batch_size=16                   # TARGET_JUDGE_BATCH_SIZE: batch size for target judging stage.
+oracle_input_types=""                        # ORACLE_INPUT_TYPES: comma-separated oracle probes; empty uses mode defaults.
+oracle_token_point_filter="all"              # ORACLE_TOKEN_POINT_FILTER: all | post_prompt
 judge_thinking="off"                         # JUDGE_THINKING: default | off
 judge_instruction_path="strongReject_v5.jinja2"  # JUDGE_INSTRUCTION_PATH: judge prompt template file.
 oracle_prompts_path="prompts/oracle_prompts/default_oracle_prompts.json"  # ORACLE_PROMPTS_PATH: oracle prompt list file.
@@ -109,12 +112,15 @@ Options:
   --num-rollouts N               NUM_ROLLOUTS
   --k-rollouts N                 K_ROLLOUTS
   --num-oracle-rollouts N        NUM_ORACLE_ROLLOUTS
+  --target-prompt-offset N       TARGET_PROMPT_OFFSET
   --target-prompt-limit N        TARGET_PROMPT_LIMIT
   --max-new-tokens N             MAX_NEW_TOKENS
   --oracle-max-new-tokens N      ORACLE_MAX_NEW_TOKENS
   --oracle-eval-batch-size N     ORACLE_EVAL_BATCH_SIZE
   --oracle-judge-batch-size N    ORACLE_JUDGE_BATCH_SIZE
   --target-judge-batch-size N    TARGET_JUDGE_BATCH_SIZE
+  --oracle-input-types CSV       ORACLE_INPUT_TYPES, e.g. rollout_segment,token_points
+  --oracle-token-point-filter F  ORACLE_TOKEN_POINT_FILTER: all | post_prompt
   --judge-instruction-path PATH  JUDGE_INSTRUCTION_PATH
   --oracle-prompts-path PATH     ORACLE_PROMPTS_PATH
   --oracle-adapter-path PATH     ORACLE_ADAPTER_PATH (LoRA checkpoint/path to load)
@@ -152,9 +158,13 @@ Preset behavior:
   target_judging_only:
     target stages on, oracle stages off
     oracle rollout mode is unused because oracle stages are off
+  rollout_post_prompt_oracle:
+    mode=all_target_deterministic, all 4 stages enabled
+    oracle probes limited to rollout_segment and post-prompt token_points
 
 Preset examples:
   ./run_oracle_experiment.sh --preset full_deterministic_oracle
+  ./run_oracle_experiment.sh --preset rollout_post_prompt_oracle
   ./run_oracle_experiment.sh --preset sampled_target_repeats --k-rollouts 8 --num-oracle-rollouts 3
   ./run_oracle_experiment.sh --preset prompt_only_oracle --num-oracle-rollouts 4
   ./run_oracle_experiment.sh --preset oracle_target_control --num-rollouts 50 --target-prompt-limit 100
@@ -170,12 +180,15 @@ MODEL_NAME_FROM_ENV="${MODEL_NAME+x}"
 NUM_ROLLOUTS_FROM_ENV="${NUM_ROLLOUTS+x}"
 K_ROLLOUTS_FROM_ENV="${K_ROLLOUTS+x}"
 NUM_ORACLE_ROLLOUTS_FROM_ENV="${NUM_ORACLE_ROLLOUTS+x}"
+TARGET_PROMPT_OFFSET_FROM_ENV="${TARGET_PROMPT_OFFSET+x}"
 TARGET_PROMPT_LIMIT_FROM_ENV="${TARGET_PROMPT_LIMIT+x}"
 MAX_NEW_TOKENS_FROM_ENV="${MAX_NEW_TOKENS+x}"
 ORACLE_MAX_NEW_TOKENS_FROM_ENV="${ORACLE_MAX_NEW_TOKENS+x}"
 ORACLE_EVAL_BATCH_SIZE_FROM_ENV="${ORACLE_EVAL_BATCH_SIZE+x}"
 ORACLE_JUDGE_BATCH_SIZE_FROM_ENV="${ORACLE_JUDGE_BATCH_SIZE+x}"
 TARGET_JUDGE_BATCH_SIZE_FROM_ENV="${TARGET_JUDGE_BATCH_SIZE+x}"
+ORACLE_INPUT_TYPES_FROM_ENV="${ORACLE_INPUT_TYPES+x}"
+ORACLE_TOKEN_POINT_FILTER_FROM_ENV="${ORACLE_TOKEN_POINT_FILTER+x}"
 JUDGE_THINKING_FROM_ENV="${JUDGE_THINKING+x}"
 JUDGE_INSTRUCTION_PATH_FROM_ENV="${JUDGE_INSTRUCTION_PATH+x}"
 ORACLE_PROMPTS_PATH_FROM_ENV="${ORACLE_PROMPTS_PATH+x}"
@@ -195,12 +208,15 @@ MODEL_NAME="${MODEL_NAME:-$model_name}"
 NUM_ROLLOUTS="${NUM_ROLLOUTS:-$num_rollouts}"
 K_ROLLOUTS="${K_ROLLOUTS:-$k_rollouts}"
 NUM_ORACLE_ROLLOUTS="${NUM_ORACLE_ROLLOUTS:-$num_oracle_rollouts}"
+TARGET_PROMPT_OFFSET="${TARGET_PROMPT_OFFSET:-$target_prompt_offset}"
 TARGET_PROMPT_LIMIT="${TARGET_PROMPT_LIMIT:-$target_prompt_limit}"
 MAX_NEW_TOKENS="${MAX_NEW_TOKENS:-$max_new_tokens}"
 ORACLE_MAX_NEW_TOKENS="${ORACLE_MAX_NEW_TOKENS:-$oracle_max_new_tokens}"
 ORACLE_EVAL_BATCH_SIZE="${ORACLE_EVAL_BATCH_SIZE:-$oracle_eval_batch_size}"
 ORACLE_JUDGE_BATCH_SIZE="${ORACLE_JUDGE_BATCH_SIZE:-$oracle_judge_batch_size}"
 TARGET_JUDGE_BATCH_SIZE="${TARGET_JUDGE_BATCH_SIZE:-$target_judge_batch_size}"
+ORACLE_INPUT_TYPES="${ORACLE_INPUT_TYPES:-$oracle_input_types}"
+ORACLE_TOKEN_POINT_FILTER="${ORACLE_TOKEN_POINT_FILTER:-$oracle_token_point_filter}"
 JUDGE_THINKING="${JUDGE_THINKING:-$judge_thinking}"
 JUDGE_INSTRUCTION_PATH="${JUDGE_INSTRUCTION_PATH:-$judge_instruction_path}"
 ORACLE_PROMPTS_PATH="${ORACLE_PROMPTS_PATH:-$oracle_prompts_path}"
@@ -229,6 +245,8 @@ RUN_ORACLE_JUDGING_SET="false"
 TARGET_LORA_PATH_SET="false"
 JUDGE_LORA_PATH_SET="false"
 EXPERIMENT_PRESET_SET="false"
+ORACLE_INPUT_TYPES_SET="false"
+ORACLE_TOKEN_POINT_FILTER_SET="false"
 
 EXTRA_ENV_VARS=()
 while [[ $# -gt 0 ]]; do
@@ -238,12 +256,15 @@ while [[ $# -gt 0 ]]; do
     --num-rollouts) NUM_ROLLOUTS="$2"; shift 2 ;;
     --k-rollouts) K_ROLLOUTS="$2"; K_ROLLOUTS_SET="true"; shift 2 ;;
     --num-oracle-rollouts) NUM_ORACLE_ROLLOUTS="$2"; NUM_ORACLE_ROLLOUTS_SET="true"; shift 2 ;;
+    --target-prompt-offset) TARGET_PROMPT_OFFSET="$2"; shift 2 ;;
     --target-prompt-limit) TARGET_PROMPT_LIMIT="$2"; shift 2 ;;
     --max-new-tokens) MAX_NEW_TOKENS="$2"; shift 2 ;;
     --oracle-max-new-tokens) ORACLE_MAX_NEW_TOKENS="$2"; shift 2 ;;
     --oracle-eval-batch-size) ORACLE_EVAL_BATCH_SIZE="$2"; shift 2 ;;
     --oracle-judge-batch-size) ORACLE_JUDGE_BATCH_SIZE="$2"; shift 2 ;;
     --target-judge-batch-size) TARGET_JUDGE_BATCH_SIZE="$2"; shift 2 ;;
+    --oracle-input-types) ORACLE_INPUT_TYPES="$2"; ORACLE_INPUT_TYPES_SET="true"; shift 2 ;;
+    --oracle-token-point-filter) ORACLE_TOKEN_POINT_FILTER="$2"; ORACLE_TOKEN_POINT_FILTER_SET="true"; shift 2 ;;
     --judge-thinking) JUDGE_THINKING="$2"; shift 2 ;;
     --judge-instruction-path) JUDGE_INSTRUCTION_PATH="$2"; shift 2 ;;
     --oracle-prompts-path) ORACLE_PROMPTS_PATH="$2"; shift 2 ;;
@@ -295,6 +316,15 @@ case "$EXPERIMENT_PRESET" in
     set_preset_if_unset RUN_TARGET_JUDGING "true" "$RUN_TARGET_JUDGING_SET" "$RUN_TARGET_JUDGING_FROM_ENV"
     set_preset_if_unset RUN_ORACLE_ROLLOUTS "true" "$RUN_ORACLE_ROLLOUTS_SET" "$RUN_ORACLE_ROLLOUTS_FROM_ENV"
     set_preset_if_unset RUN_ORACLE_JUDGING "true" "$RUN_ORACLE_JUDGING_SET" "$RUN_ORACLE_JUDGING_FROM_ENV"
+    ;;
+  rollout_post_prompt_oracle)
+    set_preset_if_unset MODE "all_target_deterministic" "$MODE_SET" "$MODE_FROM_ENV"
+    set_preset_if_unset RUN_TARGET_ROLLOUTS "true" "$RUN_TARGET_ROLLOUTS_SET" "$RUN_TARGET_ROLLOUTS_FROM_ENV"
+    set_preset_if_unset RUN_TARGET_JUDGING "true" "$RUN_TARGET_JUDGING_SET" "$RUN_TARGET_JUDGING_FROM_ENV"
+    set_preset_if_unset RUN_ORACLE_ROLLOUTS "true" "$RUN_ORACLE_ROLLOUTS_SET" "$RUN_ORACLE_ROLLOUTS_FROM_ENV"
+    set_preset_if_unset RUN_ORACLE_JUDGING "true" "$RUN_ORACLE_JUDGING_SET" "$RUN_ORACLE_JUDGING_FROM_ENV"
+    set_preset_if_unset ORACLE_INPUT_TYPES "rollout_segment,token_points" "$ORACLE_INPUT_TYPES_SET" "$ORACLE_INPUT_TYPES_FROM_ENV"
+    set_preset_if_unset ORACLE_TOKEN_POINT_FILTER "post_prompt" "$ORACLE_TOKEN_POINT_FILTER_SET" "$ORACLE_TOKEN_POINT_FILTER_FROM_ENV"
     ;;
   sampled_target_repeats)
     set_preset_if_unset MODE "sampled_target_repeats" "$MODE_SET" "$MODE_FROM_ENV"
@@ -384,9 +414,9 @@ case "$WANDB_SETTING" in
 esac
 
 case "$EXPERIMENT_PRESET" in
-  ""|full_deterministic_oracle|sampled_target_repeats|prompt_only_oracle|oracle_target_control|target_judging_only) ;;
+  ""|full_deterministic_oracle|rollout_post_prompt_oracle|sampled_target_repeats|prompt_only_oracle|oracle_target_control|target_judging_only) ;;
   *)
-    echo "Invalid --preset: $EXPERIMENT_PRESET (supported: full_deterministic_oracle, sampled_target_repeats, prompt_only_oracle, oracle_target_control, target_judging_only)" >&2
+    echo "Invalid --preset: $EXPERIMENT_PRESET (supported: full_deterministic_oracle, rollout_post_prompt_oracle, sampled_target_repeats, prompt_only_oracle, oracle_target_control, target_judging_only)" >&2
     usage
     exit 1
     ;;
@@ -433,6 +463,15 @@ case "$JUDGE_THINKING" in
     ;;
 esac
 
+case "$ORACLE_TOKEN_POINT_FILTER" in
+  all|post_prompt) ;;
+  *)
+    echo "Invalid --oracle-token-point-filter setting: $ORACLE_TOKEN_POINT_FILTER (expected 'all' or 'post_prompt')" >&2
+    usage
+    exit 1
+    ;;
+esac
+
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$SCRIPT_DIR"
 
@@ -451,12 +490,14 @@ export MODEL_NAME="$MODEL_NAME"
 export NUM_ROLLOUTS="$NUM_ROLLOUTS"
 export K_ROLLOUTS="$K_ROLLOUTS"
 export NUM_ORACLE_ROLLOUTS="$NUM_ORACLE_ROLLOUTS"
+export TARGET_PROMPT_OFFSET="$TARGET_PROMPT_OFFSET"
 export TARGET_PROMPT_LIMIT="$TARGET_PROMPT_LIMIT"
 export MAX_NEW_TOKENS="$MAX_NEW_TOKENS"
 export ORACLE_MAX_NEW_TOKENS="$ORACLE_MAX_NEW_TOKENS"
 export ORACLE_EVAL_BATCH_SIZE="$ORACLE_EVAL_BATCH_SIZE"
 export ORACLE_JUDGE_BATCH_SIZE="$ORACLE_JUDGE_BATCH_SIZE"
 export TARGET_JUDGE_BATCH_SIZE="$TARGET_JUDGE_BATCH_SIZE"
+export ORACLE_TOKEN_POINT_FILTER="$ORACLE_TOKEN_POINT_FILTER"
 export JUDGE_THINKING="$JUDGE_THINKING"
 export JUDGE_INSTRUCTION_PATH="$JUDGE_INSTRUCTION_PATH"
 export ORACLE_ADAPTER_PATH="$ORACLE_ADAPTER_PATH"
@@ -472,6 +513,11 @@ export ORACLE_LORA_PATH="$ORACLE_LORA_PATH"
 
 if [[ -n "$ORACLE_PROMPTS_PATH" ]]; then
   export ORACLE_PROMPTS_PATH="$ORACLE_PROMPTS_PATH"
+fi
+if [[ -n "$ORACLE_INPUT_TYPES" ]]; then
+  export ORACLE_INPUT_TYPES="$ORACLE_INPUT_TYPES"
+else
+  unset ORACLE_INPUT_TYPES || true
 fi
 if [[ -n "$WANDB_RUN_NAME" ]]; then
   export WANDB_RUN_NAME="$WANDB_RUN_NAME"
@@ -491,12 +537,15 @@ Running bypass_refusal.py with:
   NUM_ROLLOUTS=$NUM_ROLLOUTS
   K_ROLLOUTS=$K_ROLLOUTS
   NUM_ORACLE_ROLLOUTS=$NUM_ORACLE_ROLLOUTS
+  TARGET_PROMPT_OFFSET=$TARGET_PROMPT_OFFSET
   TARGET_PROMPT_LIMIT=$TARGET_PROMPT_LIMIT
   MAX_NEW_TOKENS=$MAX_NEW_TOKENS
   ORACLE_MAX_NEW_TOKENS=$ORACLE_MAX_NEW_TOKENS
   ORACLE_EVAL_BATCH_SIZE=$ORACLE_EVAL_BATCH_SIZE
   ORACLE_JUDGE_BATCH_SIZE=$ORACLE_JUDGE_BATCH_SIZE
   TARGET_JUDGE_BATCH_SIZE=$TARGET_JUDGE_BATCH_SIZE
+  ORACLE_INPUT_TYPES=${ORACLE_INPUT_TYPES:-<mode default>}
+  ORACLE_TOKEN_POINT_FILTER=$ORACLE_TOKEN_POINT_FILTER
   JUDGE_THINKING=$JUDGE_THINKING
   JUDGE_INSTRUCTION_PATH=$JUDGE_INSTRUCTION_PATH
   ORACLE_PROMPTS_PATH=${ORACLE_PROMPTS_PATH:-<default>}

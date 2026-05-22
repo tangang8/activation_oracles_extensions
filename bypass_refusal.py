@@ -1,4 +1,5 @@
 import os
+import json
 from contextlib import nullcontext
 from time import perf_counter
 from pathlib import Path
@@ -54,6 +55,9 @@ class ExperimentConfig:
     oracle_eval_batch_size: int
     oracle_judge_batch_size: int
     target_judge_batch_size: int
+    oracle_input_types: list[str] | None
+    oracle_token_point_filter: str
+    target_prompt_offset: int
     target_prompt_limit: int
     run_target_rollouts: bool
     run_target_judging: bool
@@ -110,6 +114,31 @@ class ExperimentConfig:
             raise ValueError(
                 f"Invalid JUDGE_THINKING={judge_thinking_mode!r}. Expected one of: default, off."
             )
+        oracle_token_point_filter = _env_str("ORACLE_TOKEN_POINT_FILTER", "all")
+        if oracle_token_point_filter not in {"all", "post_prompt"}:
+            raise ValueError(
+                f"Invalid ORACLE_TOKEN_POINT_FILTER={oracle_token_point_filter!r}. "
+                "Expected one of: all, post_prompt."
+            )
+        oracle_input_types = _env_csv("ORACLE_INPUT_TYPES")
+        if oracle_input_types is not None:
+            valid_oracle_input_types = {
+                "full_seq",
+                "segment",
+                "prompt_segment",
+                "rollout_segment",
+                "tokens",
+                "token_points",
+            }
+            invalid_oracle_input_types = [
+                input_type for input_type in oracle_input_types if input_type not in valid_oracle_input_types
+            ]
+            if invalid_oracle_input_types:
+                raise ValueError(
+                    "Invalid ORACLE_INPUT_TYPES value(s): "
+                    f"{', '.join(invalid_oracle_input_types)}. "
+                    f"Expected values from: {', '.join(sorted(valid_oracle_input_types))}."
+                )
 
         num_rollouts = _env_int("NUM_ROLLOUTS", 50)
         k_rollouts_raw = _env_int("K_ROLLOUTS", num_rollouts)
@@ -134,6 +163,9 @@ class ExperimentConfig:
             oracle_eval_batch_size=_env_int("ORACLE_EVAL_BATCH_SIZE", 32),
             oracle_judge_batch_size=_env_int("ORACLE_JUDGE_BATCH_SIZE", 8),
             target_judge_batch_size=_env_int("TARGET_JUDGE_BATCH_SIZE", 16),
+            oracle_input_types=oracle_input_types,
+            oracle_token_point_filter=oracle_token_point_filter,
+            target_prompt_offset=_env_int("TARGET_PROMPT_OFFSET", 0),
             target_prompt_limit=_env_int("TARGET_PROMPT_LIMIT", 100),
             run_target_rollouts=run_target_rollouts,
             run_target_judging=run_target_judging,
@@ -187,9 +219,9 @@ def _env_int(name: str, default: int) -> int:
     if raw is None:
         return default
     try:
-        return int(raw)
-    except ValueError:
-        return default
+        return int(raw.strip())
+    except ValueError as exc:
+        raise ValueError(f"Invalid integer value for {name}: {raw!r}.") from exc
 
 
 def _env_str(name: str, default: str) -> str:
@@ -198,6 +230,27 @@ def _env_str(name: str, default: str) -> str:
         return default
     value = raw.strip()
     return value if value else default
+
+
+def _env_csv(name: str) -> list[str] | None:
+    raw = os.getenv(name)
+    if raw is None:
+        return None
+    values = [item.strip() for item in raw.split(",") if item.strip()]
+    return values or None
+
+
+def _oracle_cache_variant_key(cfg: ExperimentConfig) -> str | None:
+    if cfg.oracle_input_types is None and cfg.oracle_token_point_filter == "all":
+        return None
+    return json.dumps(
+        {
+            "oracle_input_types": cfg.oracle_input_types,
+            "oracle_token_point_filter": cfg.oracle_token_point_filter,
+        },
+        sort_keys=True,
+        ensure_ascii=True,
+    )
 
 
 def _parse_bool(raw: str, *, field_name: str) -> bool:
@@ -384,6 +437,10 @@ def run_pipeline_for_target_prompt(
                 oracle_generation_kwargs_deterministic=cfg.oracle_generation_kwargs_deterministic(),
                 oracle_generation_kwargs_sampled=cfg.oracle_generation_kwargs_sampled(),
                 oracle_generation_kwargs_prompt_only=cfg.oracle_generation_kwargs_prompt_only(),
+                oracle_input_types_deterministic=cfg.oracle_input_types,
+                oracle_input_types_sampled=cfg.oracle_input_types,
+                oracle_input_types_prompt_only=cfg.oracle_input_types,
+                oracle_token_point_filter=cfg.oracle_token_point_filter,
                 eval_batch_size=cfg.oracle_eval_batch_size,
                 dist_ctx=ctx,
                 perf=perf,
@@ -429,6 +486,7 @@ def run_pipeline_for_target_prompt(
                         oracle_lora_path=cfg.oracle_lora_path,
                         oracle_generation_kwargs=cfg.oracle_judge_generation_kwargs(),
                         oracle_rollouts_dir_base=oracle_rollouts_dir_base_for_mode(cfg.oracle_rollout_mode),
+                        oracle_cache_variant_key=_oracle_cache_variant_key(cfg),
                         judge_batch_size=cfg.oracle_judge_batch_size,
                         judge_lora_path=cfg.judge_lora_path,
                         judge_thinking_mode=cfg.judge_thinking_mode,
@@ -497,7 +555,7 @@ def main(cfg: ExperimentConfig) -> None:
                 )
             )
             target_prompts = (
-                load_target_prompts_from_dataset(limit=cfg.target_prompt_limit)
+                load_target_prompts_from_dataset(limit=cfg.target_prompt_limit, offset=cfg.target_prompt_offset)
                 if should_load_target_prompts
                 else []
             )
@@ -547,8 +605,11 @@ def main(cfg: ExperimentConfig) -> None:
                 "oracle_eval_batch_size": cfg.oracle_eval_batch_size,
                 "oracle_judge_batch_size": cfg.oracle_judge_batch_size,
                 "target_judge_batch_size": cfg.target_judge_batch_size,
+                "oracle_input_types": cfg.oracle_input_types,
+                "oracle_token_point_filter": cfg.oracle_token_point_filter,
                 "judge_thinking_mode": cfg.judge_thinking_mode,
                 "judge_instruction_file": cfg.judge_instruction_path,
+                "target_prompt_offset": cfg.target_prompt_offset,
                 "target_prompt_limit": cfg.target_prompt_limit,
                 "target_prompts_total": len(target_prompts),
                 "oracle_prompts_path": cfg.oracle_prompts_path,
@@ -587,7 +648,7 @@ def main(cfg: ExperimentConfig) -> None:
             judge_instruction_template = ""
         combinations_processed = 0
         combinations_total = len(target_prompts) * len(oracle_prompts)
-        for target_prompt_index, target_prompt_str in enumerate(target_prompts):
+        for target_prompt_index, target_prompt_str in enumerate(target_prompts, start=cfg.target_prompt_offset):
             combinations_processed += run_pipeline_for_target_prompt(
                 model=model,
                 tokenizer=tokenizer,

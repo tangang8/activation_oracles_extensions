@@ -187,6 +187,7 @@ def deterministic_oracle_cache_file_path(
     oracle_generation_kwargs: dict[str, Any],
     target_prompt: str,
     oracle_prompt: str,
+    cache_variant_key: str | None = None,
 ) -> Path:
     """
     Build deterministic oracle rollout cache file path.
@@ -204,7 +205,11 @@ def deterministic_oracle_cache_file_path(
         lora_path=oracle_lora_path,
     )
     target_prompt_dir = _preview_hash_name(target_prompt)
-    oracle_file = f"{_preview_hash_name(oracle_prompt)}.json"
+    variant_suffix = ""
+    if cache_variant_key:
+        variant_hash = hashlib.sha256(cache_variant_key.encode("utf-8")).hexdigest()[:12]
+        variant_suffix = f"__{variant_hash}"
+    oracle_file = f"{_preview_hash_name(oracle_prompt)}{variant_suffix}.json"
     return (
         Path(cache_root)
         / target_dir
@@ -267,6 +272,7 @@ def deterministic_oracle_judge_cache_file_path(
     target_prompt: str,
     oracle_prompt: str,
     oracle_rollouts_dir_base: str = "oracle_rollouts",
+    cache_variant_key: str | None = None,
 ) -> Path:
     """
     Build judged deterministic oracle rollout cache file path.
@@ -298,7 +304,11 @@ def deterministic_oracle_judge_cache_file_path(
         lora_path=oracle_lora_path,
     )
     target_prompt_dir = _preview_hash_name(target_prompt)
-    oracle_file = f"{_preview_hash_name(oracle_prompt)}.json"
+    variant_suffix = ""
+    if cache_variant_key:
+        variant_hash = hashlib.sha256(cache_variant_key.encode("utf-8")).hexdigest()[:12]
+        variant_suffix = f"__{variant_hash}"
+    oracle_file = f"{_preview_hash_name(oracle_prompt)}{variant_suffix}.json"
     return (
         Path(cache_root)
         / target_dir

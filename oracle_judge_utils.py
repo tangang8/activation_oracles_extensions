@@ -234,6 +234,7 @@ def judge_oracle_rollouts(
     oracle_lora_path: str | None,
     oracle_generation_kwargs: dict[str, Any],
     oracle_rollouts_dir_base: str = "oracle_rollouts",
+    oracle_cache_variant_key: str | None = None,
     judge_generation_kwargs: dict[str, Any] | None = None,
     judge_thinking_mode: str = "default",
     judge_batch_size: int = 8,
@@ -263,6 +264,7 @@ def judge_oracle_rollouts(
         target_prompt=target_prompt,
         oracle_prompt=oracle_prompt,
         oracle_rollouts_dir_base=oracle_rollouts_dir_base,
+        cache_variant_key=oracle_cache_variant_key,
     )
 
     loaded = load_json(cache_file)

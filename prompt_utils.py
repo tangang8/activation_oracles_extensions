@@ -25,14 +25,16 @@ def _normalize_target_prompt(item: Any) -> str | None:
     return None
 
 
-def load_target_prompts_from_dataset(limit: int = 100) -> list[str]:
+def load_target_prompts_from_dataset(limit: int = 100, offset: int = 0) -> list[str]:
     from datasets import load_dataset  # type: ignore
 
+    if offset < 0:
+        raise ValueError(f"offset must be >= 0, got {offset}")
     if limit <= 0:
         return []
 
     column = load_dataset("LLM-LAT/harmful-dataset", split="train")["prompt"]
-    selected = column[:limit]
+    selected = column[offset : offset + limit]
     prompts: list[str] = []
     for item in selected:
         normalized = _normalize_target_prompt(item)

@@ -31,6 +31,15 @@ from oracle_token_points import (
 )
 from perf_utils import PerfLogger
 
+VALID_ORACLE_INPUT_TYPES = {
+    "full_seq",
+    "segment",
+    "prompt_segment",
+    "rollout_segment",
+    "tokens",
+    "token_points",
+}
+
 
 @dataclass(frozen=True)
 class OracleInputProvenance:
@@ -44,6 +53,90 @@ def _oracle_input_source(target_responses: list[str] | None) -> tuple[str, str]:
     if target_responses is None:
         return "prompt_only", "prompt_input_index"
     return "target_rollout", "target_rollout_index"
+
+
+def _filter_token_points_post_prompt(spec: dict[str, Any]) -> dict[str, Any]:
+    prompt_len = int(spec["prompt_len"])
+    token_points = spec.get("token_points", {})
+    if not isinstance(token_points, dict):
+        return spec
+
+    filtered_points = {
+        str(name): int(idx)
+        for name, idx in token_points.items()
+        if int(idx) >= prompt_len
+    }
+    filtered_spec = dict(spec)
+    filtered_spec["token_points"] = filtered_points
+    filtered_spec["token_point_indices"] = sorted(set(filtered_points.values()))
+    return filtered_spec
+
+
+def _validate_oracle_probe_config(
+    *,
+    source_type: str,
+    oracle_input_types: list[str],
+    combined_specs: list[dict[str, Any]],
+    token_point_indices_by_target: list[list[int]],
+    segment_start_idx: int,
+    segment_end_idx: int | None,
+    token_start_idx: int,
+    token_end_idx: int | None,
+) -> None:
+    invalid_input_types = [kind for kind in oracle_input_types if kind not in VALID_ORACLE_INPUT_TYPES]
+    if invalid_input_types:
+        raise ValueError(
+            "Unsupported oracle_input_types value(s): "
+            f"{', '.join(invalid_input_types)}. "
+            f"Expected values from: {', '.join(sorted(VALID_ORACLE_INPUT_TYPES))}."
+        )
+    if source_type == "prompt_only" and "rollout_segment" in oracle_input_types:
+        raise ValueError("oracle_input_types includes rollout_segment, but prompt-only inputs have no rollout tokens.")
+
+    for target_idx, spec in enumerate(combined_specs):
+        total_tokens = int(spec["combined_len"])
+        prompt_len = int(spec["prompt_len"])
+        rollout_len = int(spec["rollout_len"])
+        label = f"{source_type} target_idx={target_idx}"
+
+        if "prompt_segment" in oracle_input_types and prompt_len <= 0:
+            raise ValueError(f"prompt_segment requested for {label}, but the prompt has no tokens.")
+        if "rollout_segment" in oracle_input_types and rollout_len <= 0:
+            raise ValueError(f"rollout_segment requested for {label}, but the rollout has no tokens.")
+
+        if "segment" in oracle_input_types:
+            segment_end = total_tokens if segment_end_idx is None else segment_end_idx
+            if segment_start_idx < 0:
+                raise ValueError(f"segment_start_idx ({segment_start_idx}) must be >= 0 for {label}.")
+            if segment_end > total_tokens:
+                raise ValueError(
+                    f"segment_end_idx ({segment_end}) exceeds tokenized input length ({total_tokens}) for {label}."
+                )
+            if segment_start_idx >= segment_end:
+                raise ValueError(
+                    f"segment_start_idx ({segment_start_idx}) must be < segment_end_idx ({segment_end}) for {label}."
+                )
+
+        if "tokens" in oracle_input_types:
+            token_end = total_tokens if token_end_idx is None else token_end_idx
+            if token_start_idx < 0:
+                raise ValueError(f"token_start_idx ({token_start_idx}) must be >= 0 for {label}.")
+            if token_end > total_tokens:
+                raise ValueError(
+                    f"token_end_idx ({token_end}) exceeds tokenized input length ({total_tokens}) for {label}."
+                )
+            if token_start_idx >= token_end:
+                raise ValueError(
+                    f"token_start_idx ({token_start_idx}) must be < token_end_idx ({token_end}) for {label}."
+                )
+
+        if "token_points" in oracle_input_types:
+            for token_idx in token_point_indices_by_target[target_idx]:
+                if token_idx < 0 or token_idx >= total_tokens:
+                    raise ValueError(
+                        f"token point index ({token_idx}) is outside tokenized input length ({total_tokens}) "
+                        f"for {label}."
+                    )
 
 
 def _encode_formatted_prompts(
@@ -106,6 +199,7 @@ def run_oracle_batched(
     eval_batch_size: int = 32,
     oracle_repeats: int = 1,
     oracle_input_types: list[str] | None = None,
+    oracle_token_point_filter: str = "all",
     # Original segment mode compatibility ("segment")
     segment_start_idx: int = 0,
     segment_end_idx: int | None = None,
@@ -139,6 +233,9 @@ def run_oracle_batched(
       - If token_point_indices_by_target is None:
           * uses extractor-derived defaults per target from combined_specs
           * prompt-only targets use per-model prompt token-point extractors
+      - oracle_token_point_filter="post_prompt" keeps only extractor-derived
+        target-rollout token points whose index is after the formatted target
+        prompt boundary.
 
     Supported oracle_input_types:
       - "full_seq"        : full combined sequence
@@ -156,6 +253,11 @@ def run_oracle_batched(
     """
     if oracle_repeats <= 0:
         raise ValueError(f"oracle_repeats must be > 0, got {oracle_repeats}")
+    if oracle_token_point_filter not in {"all", "post_prompt"}:
+        raise ValueError(
+            f"Unsupported oracle_token_point_filter={oracle_token_point_filter!r}. "
+            "Expected one of: all, post_prompt."
+        )
     if isinstance(formatted_target_prompts, str):
         if target_responses is None:
             formatted_target_prompts = [formatted_target_prompts]
@@ -244,12 +346,24 @@ def run_oracle_batched(
                 )
                 for prompt, response in zip(formatted_target_prompts, target_responses, strict=True)
             ]
+        if oracle_token_point_filter == "post_prompt":
+            combined_specs = [_filter_token_points_post_prompt(spec) for spec in combined_specs]
     combined_texts = [spec["combined_text"] for spec in combined_specs]
 
     if token_point_indices_by_target is None:
         token_point_indices_by_target = [spec["token_point_indices"] for spec in combined_specs]
     if len(token_point_indices_by_target) != len(combined_specs):
         raise ValueError("token_point_indices_by_target must match number of targets.")
+    _validate_oracle_probe_config(
+        source_type=source_type,
+        oracle_input_types=oracle_input_types,
+        combined_specs=combined_specs,
+        token_point_indices_by_target=token_point_indices_by_target,
+        segment_start_idx=segment_start_idx,
+        segment_end_idx=segment_end_idx,
+        token_start_idx=token_start_idx,
+        token_end_idx=token_end_idx,
+    )
 
     target_model_name = model.config._name_or_path
     oracle_model_name = model.config._name_or_path
@@ -279,6 +393,8 @@ def run_oracle_batched(
             "injection_layer": injection_layer,
             "steering_coefficient": steering_coefficient,
         }
+        if oracle_token_point_filter != "all":
+            cache_key["oracle_token_point_filter"] = oracle_token_point_filter
         cache_key_text = json.dumps(cache_key, sort_keys=True, ensure_ascii=True)
         cache_path = oracle_cache_file_path(
             cache_root=cache_root,
@@ -465,11 +581,7 @@ def run_oracle_batched(
                     add_probe(list(range(total_tokens)), probe_kind="full_seq", repeat_idx=repeat_idx)
                 if "segment" in oracle_input_types:
                     seg_start = segment_start_idx
-                    seg_end = total_tokens if segment_end_idx is None else min(segment_end_idx, total_tokens)
-                    if seg_start < 0:
-                        raise ValueError(f"segment_start_idx ({seg_start}) must be >= 0")
-                    if seg_start >= seg_end:
-                        raise ValueError(f"segment_start_idx ({seg_start}) must be < segment_end_idx ({seg_end})")
+                    seg_end = total_tokens if segment_end_idx is None else segment_end_idx
                     add_probe(list(range(seg_start, seg_end)), probe_kind="segment", repeat_idx=repeat_idx)
                 if "prompt_segment" in oracle_input_types:
                     add_probe(list(range(prompt_start, prompt_end)), probe_kind="prompt_segment", repeat_idx=repeat_idx)
@@ -477,13 +589,11 @@ def run_oracle_batched(
                     add_probe(list(range(rollout_start, rollout_end)), probe_kind="rollout_segment", repeat_idx=repeat_idx)
                 if "tokens" in oracle_input_types:
                     tok_start = token_start_idx
-                    tok_end = total_tokens if token_end_idx is None else min(token_end_idx, total_tokens)
+                    tok_end = total_tokens if token_end_idx is None else token_end_idx
                     for token_idx in range(tok_start, tok_end):
                         add_probe([token_idx], probe_kind="tokens", repeat_idx=repeat_idx, token_index=token_idx)
                 if "token_points" in oracle_input_types:
                     for token_idx in sorted(set(assigned_token_point_indices[local_target_idx])):
-                        if token_idx < 0 or token_idx >= total_tokens:
-                            continue
                         add_probe([token_idx], probe_kind="token_points", repeat_idx=repeat_idx, token_index=token_idx)
 
             target_outputs: dict[int, dict[str, Any]] = {

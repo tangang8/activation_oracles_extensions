@@ -76,8 +76,12 @@ class OraclePipelineUnitTests(unittest.TestCase):
                 "oracle_pipeline.build_prompt_only_points_spec",
                 return_value={
                     "combined_text": "formatted",
+                    "prompt_len": 1,
+                    "combined_len": 1,
+                    "rollout_len": 0,
                     "prompt_segment": (0, 1),
                     "rollout_segment": (1, 1),
+                    "token_points": {},
                     "token_point_indices": [],
                 },
             ),
@@ -113,6 +117,81 @@ class OraclePipelineUnitTests(unittest.TestCase):
                 target_responses=["response"],
                 oracle_prompt="oracle",
                 oracle_input_source_type="prompt_only",
+            )
+
+    def test_validate_prompt_only_allows_prompt_segment(self) -> None:
+        oracle_pipeline._validate_oracle_probe_config(
+            source_type="prompt_only",
+            oracle_input_types=["prompt_segment", "segment", "tokens"],
+            combined_specs=[
+                {
+                    "prompt_len": 5,
+                    "combined_len": 5,
+                    "rollout_len": 0,
+                }
+            ],
+            token_point_indices_by_target=[[]],
+            segment_start_idx=1,
+            segment_end_idx=5,
+            token_start_idx=0,
+            token_end_idx=5,
+        )
+
+    def test_validate_prompt_only_rejects_rollout_segment(self) -> None:
+        with self.assertRaisesRegex(ValueError, "no rollout tokens"):
+            oracle_pipeline._validate_oracle_probe_config(
+                source_type="prompt_only",
+                oracle_input_types=["rollout_segment"],
+                combined_specs=[
+                    {
+                        "prompt_len": 5,
+                        "combined_len": 5,
+                        "rollout_len": 0,
+                    }
+                ],
+                token_point_indices_by_target=[[]],
+                segment_start_idx=0,
+                segment_end_idx=None,
+                token_start_idx=0,
+                token_end_idx=None,
+            )
+
+    def test_validate_segment_bounds_rejects_indices_past_prompt_only_length(self) -> None:
+        with self.assertRaisesRegex(ValueError, "segment_end_idx .* exceeds tokenized input length"):
+            oracle_pipeline._validate_oracle_probe_config(
+                source_type="prompt_only",
+                oracle_input_types=["segment"],
+                combined_specs=[
+                    {
+                        "prompt_len": 5,
+                        "combined_len": 5,
+                        "rollout_len": 0,
+                    }
+                ],
+                token_point_indices_by_target=[[]],
+                segment_start_idx=0,
+                segment_end_idx=6,
+                token_start_idx=0,
+                token_end_idx=None,
+            )
+
+    def test_validate_token_points_rejects_out_of_bounds_indices(self) -> None:
+        with self.assertRaisesRegex(ValueError, "outside tokenized input length"):
+            oracle_pipeline._validate_oracle_probe_config(
+                source_type="target_rollout",
+                oracle_input_types=["token_points"],
+                combined_specs=[
+                    {
+                        "prompt_len": 5,
+                        "combined_len": 8,
+                        "rollout_len": 3,
+                    }
+                ],
+                token_point_indices_by_target=[[7, 8]],
+                segment_start_idx=0,
+                segment_end_idx=None,
+                token_start_idx=0,
+                token_end_idx=None,
             )
 
 

@@ -36,6 +36,9 @@ class BypassRefusalPipelineTests(unittest.TestCase):
             oracle_eval_batch_size=2,
             oracle_judge_batch_size=2,
             target_judge_batch_size=2,
+            oracle_input_types=None,
+            oracle_token_point_filter="all",
+            target_prompt_offset=0,
             target_prompt_limit=1,
             run_target_rollouts=True,
             run_target_judging=True,
@@ -69,6 +72,35 @@ class BypassRefusalPipelineTests(unittest.TestCase):
         self.assertEqual(cfg.oracle_lora_path, "oracle")
         self.assertEqual(cfg.oracle_adapter_path, "myorg/adapter")
         self.assertEqual(cfg.target_judge_batch_size, 16)
+        self.assertEqual(cfg.target_prompt_offset, 0)
+
+    def test_experiment_config_valid_integer_env_values_parse(self) -> None:
+        with patch.dict(
+            os.environ,
+            {
+                "ORACLE_ADAPTER_PATH": "myorg/adapter",
+                "TARGET_PROMPT_OFFSET": "50",
+                "TARGET_PROMPT_LIMIT": "7",
+                "ORACLE_EVAL_BATCH_SIZE": "128",
+            },
+            clear=True,
+        ):
+            cfg = br.ExperimentConfig.from_env()
+        self.assertEqual(cfg.target_prompt_offset, 50)
+        self.assertEqual(cfg.target_prompt_limit, 7)
+        self.assertEqual(cfg.oracle_eval_batch_size, 128)
+
+    def test_experiment_config_invalid_integer_env_value_raises(self) -> None:
+        with patch.dict(
+            os.environ,
+            {
+                "ORACLE_ADAPTER_PATH": "myorg/adapter",
+                "NUM_ROLLOUTS": "fifty",
+            },
+            clear=True,
+        ):
+            with self.assertRaisesRegex(ValueError, "Invalid integer value for NUM_ROLLOUTS"):
+                br.ExperimentConfig.from_env()
 
     def test_experiment_config_uses_explicit_env_stage_values(self) -> None:
         with patch.dict(
@@ -227,6 +259,38 @@ class BypassRefusalPipelineTests(unittest.TestCase):
 
         self.assertEqual(combos, 1)
         judge_oracle_mock.assert_not_called()
+
+    def test_main_uses_global_target_prompt_indices_for_shards(self) -> None:
+        ctx = SimpleNamespace(is_main=True, rank=0, world_size=1, local_rank=0, device=SimpleNamespace(type="cpu"), enabled=False)
+        model = SimpleNamespace(config=SimpleNamespace(_name_or_path="Qwen/Qwen3-8B"))
+        cfg = self._base_config(
+            target_prompt_offset=50,
+            target_prompt_limit=2,
+            run_target_rollouts=False,
+            run_target_judging=False,
+            run_oracle_rollouts=True,
+            run_oracle_judging=False,
+            oracle_rollout_mode="prompt_only_repeats",
+        )
+
+        with (
+            patch("bypass_refusal.init_distributed", return_value=ctx),
+            patch("bypass_refusal.cleanup_distributed"),
+            patch("bypass_refusal.load_target_prompts_from_dataset", return_value=["p50", "p51"]) as target_loader,
+            patch("bypass_refusal.load_oracle_prompts_from_file", return_value=["oracle"]),
+            patch("bypass_refusal.init_wandb_run", return_value=None),
+            patch("bypass_refusal.build_perf_logger", return_value=None),
+            patch("bypass_refusal._require_hf_token", return_value="token"),
+            patch("bypass_refusal.load_model_stack", return_value=(object(), model)),
+            patch("bypass_refusal.run_pipeline_for_target_prompt", return_value=1) as pipeline_mock,
+        ):
+            br.main(cfg)
+
+        target_loader.assert_called_once_with(limit=2, offset=50)
+        self.assertEqual(
+            [call.kwargs["target_prompt_index"] for call in pipeline_mock.call_args_list],
+            [50, 51],
+        )
 
 
 if __name__ == "__main__":

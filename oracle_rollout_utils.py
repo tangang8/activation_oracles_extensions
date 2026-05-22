@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+import json
 from typing import Any, Literal
 
 import torch
@@ -56,6 +57,22 @@ PROMPT_ONLY_ORACLE_GENERATION_KWARGS = {
 }
 
 
+def _oracle_cache_variant_key(
+    oracle_input_types: list[str] | None,
+    oracle_token_point_filter: str,
+) -> str | None:
+    if oracle_input_types is None and oracle_token_point_filter == "all":
+        return None
+    return json.dumps(
+        {
+            "oracle_input_types": oracle_input_types,
+            "oracle_token_point_filter": oracle_token_point_filter,
+        },
+        sort_keys=True,
+        ensure_ascii=True,
+    )
+
+
 def parse_oracle_rollout_mode(raw_mode: str | None) -> OracleRolloutMode:
     normalized = (raw_mode or "").strip()
     if not normalized:
@@ -87,6 +104,7 @@ def run_oracle_combined_singlelayer(
     oracle_repeats: int = 1,
     eval_batch_size: int = 32,
     token_point_indices_by_target: list[list[int]] | None = None,
+    oracle_token_point_filter: str = "all",
     generation_kwargs: dict[str, Any] | None = None,
     dist_ctx: DistributedContext | None = None,
     perf: PerfLogger | None = None,
@@ -129,6 +147,7 @@ def run_oracle_combined_singlelayer(
         oracle_repeats=oracle_repeats,
         eval_batch_size=eval_batch_size,
         oracle_input_types=oracle_input_types,
+        oracle_token_point_filter=oracle_token_point_filter,
         generation_kwargs=generation_kwargs,
         oracle_input_source_type="target_rollout",
         dist_ctx=dist_ctx,
@@ -326,7 +345,7 @@ def _to_prompt_only_oracle_entry(
     oracle_result: dict[str, Any],
     oracle_rollout_index: int,
 ) -> dict[str, Any]:
-    scalar_probe_kinds = ("full_seq",)
+    scalar_probe_kinds = ("full_seq", "segment", "prompt_segment")
     scalar_responses = {kind: _first_response(oracle_result.get(kind, [])) for kind in scalar_probe_kinds}
     scalar_formats = {kind: _format_leaf(text) for kind, text in scalar_responses.items()}
 
@@ -383,6 +402,7 @@ def generate_deterministic_oracle_rollouts(
     cache_root: str = "cache",
     oracle_generation_kwargs: dict[str, Any] | None = None,
     oracle_input_types: list[str] | None = None,
+    oracle_token_point_filter: str = "all",
     eval_batch_size: int = 32,
     dist_ctx: DistributedContext | None = None,
     perf: PerfLogger | None = None,
@@ -394,8 +414,13 @@ def generate_deterministic_oracle_rollouts(
         temperature=0.0,
     )
 
+    explicit_oracle_input_types = oracle_input_types is not None
     if oracle_input_types is None:
         oracle_input_types = list(DEFAULT_ORACLE_INPUT_TYPES)
+    cache_variant_key = _oracle_cache_variant_key(
+        oracle_input_types if explicit_oracle_input_types else None,
+        oracle_token_point_filter,
+    )
 
     if not target_rollout_entries:
         empty_path = deterministic_oracle_cache_file_path(
@@ -407,6 +432,7 @@ def generate_deterministic_oracle_rollouts(
             oracle_generation_kwargs=oracle_generation_kwargs,
             target_prompt="",
             oracle_prompt=oracle_prompt,
+            cache_variant_key=cache_variant_key,
         )
         return [], empty_path, {"cache/oracle_hits": 0.0, "cache/oracle_missing": 0.0}
 
@@ -420,6 +446,7 @@ def generate_deterministic_oracle_rollouts(
         oracle_generation_kwargs=oracle_generation_kwargs,
         target_prompt=target_prompt,
         oracle_prompt=oracle_prompt,
+        cache_variant_key=cache_variant_key,
     )
 
     loaded = load_json(cache_file)
@@ -477,6 +504,7 @@ def generate_deterministic_oracle_rollouts(
             eval_batch_size=eval_batch_size,
             oracle_repeats=1,
             oracle_input_types=oracle_input_types,
+            oracle_token_point_filter=oracle_token_point_filter,
             oracle_input_source_type="target_rollout",
             dist_ctx=dist_ctx,
             perf=perf,
@@ -525,6 +553,7 @@ def generate_sampled_target_oracle_rollouts(
     cache_root: str = "cache",
     oracle_generation_kwargs: dict[str, Any] | None = None,
     oracle_input_types: list[str] | None = None,
+    oracle_token_point_filter: str = "all",
     eval_batch_size: int = 32,
     dist_ctx: DistributedContext | None = None,
     perf: PerfLogger | None = None,
@@ -540,8 +569,13 @@ def generate_sampled_target_oracle_rollouts(
         do_sample=True,
         temperature=1.0,
     )
+    explicit_oracle_input_types = oracle_input_types is not None
     if oracle_input_types is None:
         oracle_input_types = list(SAMPLED_ORACLE_INPUT_TYPES)
+    cache_variant_key = _oracle_cache_variant_key(
+        oracle_input_types if explicit_oracle_input_types else None,
+        oracle_token_point_filter,
+    )
 
     sorted_targets = sorted(target_rollout_entries, key=lambda entry: int(entry["rollout_index"]))
     if k_rollouts is not None:
@@ -559,6 +593,7 @@ def generate_sampled_target_oracle_rollouts(
             oracle_generation_kwargs=oracle_generation_kwargs,
             target_prompt="",
             oracle_prompt=oracle_prompt,
+            cache_variant_key=cache_variant_key,
         )
         return [], empty_path, {"cache/oracle_hits": 0.0, "cache/oracle_missing": 0.0}
 
@@ -572,6 +607,7 @@ def generate_sampled_target_oracle_rollouts(
         oracle_generation_kwargs=oracle_generation_kwargs,
         target_prompt=target_prompt,
         oracle_prompt=oracle_prompt,
+        cache_variant_key=cache_variant_key,
     )
 
     formatted_target_prompts = [
@@ -595,6 +631,7 @@ def generate_sampled_target_oracle_rollouts(
         eval_batch_size=eval_batch_size,
         oracle_repeats=num_oracle_rollouts,
         oracle_input_types=oracle_input_types,
+        oracle_token_point_filter=oracle_token_point_filter,
         oracle_input_source_type="target_rollout",
         dist_ctx=dist_ctx,
         perf=perf,
@@ -656,6 +693,7 @@ def generate_prompt_only_oracle_rollouts(
     cache_root: str = "cache",
     oracle_generation_kwargs: dict[str, Any] | None = None,
     oracle_input_types: list[str] | None = None,
+    oracle_token_point_filter: str = "all",
     eval_batch_size: int = 32,
     dist_ctx: DistributedContext | None = None,
     perf: PerfLogger | None = None,
@@ -731,6 +769,7 @@ def generate_prompt_only_oracle_rollouts(
         eval_batch_size=eval_batch_size,
         oracle_repeats=num_oracle_rollouts,
         oracle_input_types=oracle_input_types,
+        oracle_token_point_filter=oracle_token_point_filter,
         oracle_input_source_type="prompt_only",
         dist_ctx=dist_ctx,
         perf=perf,
@@ -784,6 +823,7 @@ def generate_oracle_rollouts_for_mode(
     oracle_input_types_deterministic: list[str] | None = None,
     oracle_input_types_sampled: list[str] | None = None,
     oracle_input_types_prompt_only: list[str] | None = None,
+    oracle_token_point_filter: str = "all",
     eval_batch_size: int = 32,
     dist_ctx: DistributedContext | None = None,
     perf: PerfLogger | None = None,
@@ -801,6 +841,7 @@ def generate_oracle_rollouts_for_mode(
             cache_root=cache_root,
             oracle_generation_kwargs=oracle_generation_kwargs_deterministic,
             oracle_input_types=oracle_input_types_deterministic,
+            oracle_token_point_filter=oracle_token_point_filter,
             eval_batch_size=eval_batch_size,
             dist_ctx=dist_ctx,
             perf=perf,
@@ -821,6 +862,7 @@ def generate_oracle_rollouts_for_mode(
             cache_root=cache_root,
             oracle_generation_kwargs=oracle_generation_kwargs_sampled,
             oracle_input_types=oracle_input_types_sampled,
+            oracle_token_point_filter=oracle_token_point_filter,
             eval_batch_size=eval_batch_size,
             dist_ctx=dist_ctx,
             perf=perf,
@@ -845,6 +887,7 @@ def generate_oracle_rollouts_for_mode(
             cache_root=cache_root,
             oracle_generation_kwargs=oracle_generation_kwargs_prompt_only,
             oracle_input_types=oracle_input_types_prompt_only,
+            oracle_token_point_filter=oracle_token_point_filter,
             eval_batch_size=eval_batch_size,
             dist_ctx=dist_ctx,
             perf=perf,

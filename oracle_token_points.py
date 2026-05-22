@@ -15,26 +15,39 @@ def _find_last_subsequence_start(token_ids: list[int], pattern_ids: list[int]) -
     return None
 
 
+def _tokenize_ids(tokenizer: AutoTokenizer, text: str) -> list[int]:
+    return tokenizer(
+        text,
+        return_tensors="pt",
+        add_special_tokens=False,
+    )["input_ids"][0].tolist()
+
+
+def _validate_prompt_response_boundary(prompt_ids: list[int], combined_ids: list[int]) -> None:
+    prompt_len = len(prompt_ids)
+    if combined_ids[:prompt_len] != prompt_ids:
+        raise ValueError(
+            "Tokenized prompt/response boundary is unstable: tokenizing "
+            "formatted_target_prompt + target_response does not preserve "
+            "formatted_target_prompt as an exact token prefix. Cannot safely "
+            f"compute prompt/rollout token boundaries (prompt_len={prompt_len}, "
+            f"combined_len={len(combined_ids)})."
+        )
+
+
 def build_combined_points_spec(
     tokenizer: AutoTokenizer,
     formatted_target_prompt: str,
     target_response: str,
     token_points: dict[str, int] | None = None,
 ) -> dict[str, Any]:
-    prompt_ids = tokenizer(
-        formatted_target_prompt,
-        return_tensors="pt",
-        add_special_tokens=False,
-    )["input_ids"][0]
+    prompt_ids = _tokenize_ids(tokenizer, formatted_target_prompt)
     combined_text = formatted_target_prompt + target_response
-    combined_ids = tokenizer(
-        combined_text,
-        return_tensors="pt",
-        add_special_tokens=False,
-    )["input_ids"][0]
+    combined_ids = _tokenize_ids(tokenizer, combined_text)
+    _validate_prompt_response_boundary(prompt_ids, combined_ids)
 
-    prompt_len = int(prompt_ids.shape[0])
-    combined_len = int(combined_ids.shape[0])
+    prompt_len = len(prompt_ids)
+    combined_len = len(combined_ids)
     rollout_len = combined_len - prompt_len
     if rollout_len <= 0:
         raise ValueError("Combined sequence has no rollout tokens to probe.")
@@ -84,18 +97,12 @@ def extract_token_points_combined_default(
     formatted_target_prompt: str,
     target_response: str,
 ) -> dict[str, Any]:
-    prompt_ids = tokenizer(
-        formatted_target_prompt,
-        return_tensors="pt",
-        add_special_tokens=False,
-    )["input_ids"][0]
-    prompt_len = int(prompt_ids.shape[0])
-    combined_ids = tokenizer(
-        formatted_target_prompt + target_response,
-        return_tensors="pt",
-        add_special_tokens=False,
-    )["input_ids"][0]
-    combined_len = int(combined_ids.shape[0])
+    prompt_ids = _tokenize_ids(tokenizer, formatted_target_prompt)
+    combined_ids = _tokenize_ids(tokenizer, formatted_target_prompt + target_response)
+    _validate_prompt_response_boundary(prompt_ids, combined_ids)
+
+    prompt_len = len(prompt_ids)
+    combined_len = len(combined_ids)
     token_points = {
         "last_prompt_token": prompt_len - 1,
         "first_rollout_token": prompt_len,
@@ -114,17 +121,10 @@ def extract_token_points_combined_qwen(
     formatted_target_prompt: str,
     target_response: str,
 ) -> dict[str, Any]:
-    prompt_ids = tokenizer(
-        formatted_target_prompt,
-        return_tensors="pt",
-        add_special_tokens=False,
-    )["input_ids"][0].tolist()
+    prompt_ids = _tokenize_ids(tokenizer, formatted_target_prompt)
     combined_text = formatted_target_prompt + target_response
-    combined_ids = tokenizer(
-        combined_text,
-        return_tensors="pt",
-        add_special_tokens=False,
-    )["input_ids"][0].tolist()
+    combined_ids = _tokenize_ids(tokenizer, combined_text)
+    _validate_prompt_response_boundary(prompt_ids, combined_ids)
 
     prompt_len = len(prompt_ids)
     combined_len = len(combined_ids)
