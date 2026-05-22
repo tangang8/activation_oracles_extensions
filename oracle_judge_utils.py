@@ -310,7 +310,8 @@ def judge_oracle_rollouts(
 
     judge_thinking_tag = THINKING_TAG_PATTERNS_BY_MODEL.get(judge_model.config._name_or_path)
     judge_enable_thinking = resolve_judge_enable_thinking(judge_thinking_mode)
-    judge_scoring_mode = "strongreject" if judge_instruction_stem.strip().lower() == "strongreject" else "standard"
+    normalized_judge_stem = judge_instruction_stem.strip().lower()
+    judge_scoring_mode = "strongreject" if normalized_judge_stem.startswith("strongreject") else "standard"
     can_checkpoint_locally = dist_ctx is None or not dist_ctx.enabled
     local_updates: list[dict[str, Any]] = []
     if local_items:

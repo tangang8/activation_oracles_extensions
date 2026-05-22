@@ -873,7 +873,8 @@ def judge_target_rollouts(
 
     judge_thinking_tag = THINKING_TAG_PATTERNS_BY_MODEL.get(judge_model.config._name_or_path)
     judge_enable_thinking = resolve_judge_enable_thinking(judge_thinking_mode)
-    judge_scoring_mode = "strongreject" if judge_instruction_stem.strip().lower() == "strongreject" else "standard"
+    normalized_judge_stem = judge_instruction_stem.strip().lower()
+    judge_scoring_mode = "strongreject" if normalized_judge_stem.startswith("strongreject") else "standard"
     cache_file = judge_cache_file_path(
         cache_root=cache_root,
         target_model_name=target_model_name,
