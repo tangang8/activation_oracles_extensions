@@ -9,7 +9,7 @@ Usage (from activation_oracles_extensions/):
   python test_oracle_chat.py
   python test_oracle_chat.py --num-prompts 3
   python test_oracle_chat.py --num-prompts 3
-  # writes to activation_oracles_extensions/oracle_chat_out/ by default
+  # writes to activation_oracles_extensions/test_oracle_chat_output/oracle_thinking/ by default
 """
 
 from __future__ import annotations
@@ -36,7 +36,8 @@ MODEL_NAME = "Qwen/Qwen3-8B"
 ORACLE_ADAPTER_PATH = "adamkarvonen/checkpoints_latentqa_cls_past_lens_addition_Qwen3-8B"
 ORACLE_ADAPTER_NAME = "oracle"
 SCRIPT_DIR = Path(__file__).resolve().parent
-DEFAULT_OUTPUT_DIR = SCRIPT_DIR / "oracle_chat_out"
+DEFAULT_OUTPUT_BASE_DIR = SCRIPT_DIR / "test_oracle_chat_output"
+DEFAULT_OUTPUT_DIR = DEFAULT_OUTPUT_BASE_DIR / "oracle_thinking"
 WORKSPACE_ENV_PATH = SCRIPT_DIR.parent / ".env"
 MAX_NEW_TOKENS = 10_000
 
