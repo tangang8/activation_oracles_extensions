@@ -23,7 +23,6 @@ from oracle_rollout_utils import (
 )
 from perf_utils import PerfLogger, build_perf_logger
 from prompt_utils import load_oracle_prompts_from_file, load_target_prompts_from_dataset, prompt_key
-from report_pages import save_oracle_rollouts_html, save_rollouts_html
 from rollout_utils import (
     display_rollout_results,
     format_user_target_prompt,
@@ -324,12 +323,6 @@ def run_pipeline_for_target_prompt(
                         cache_file=judge_cache_file,
                     )
                     log_rollout_metrics(wandb_run, judged_rollout_entries, compliance_results)
-                    rollouts_report_path = save_rollouts_html(
-                        rollout_entries=judged_rollout_entries,
-                        compliance_results=compliance_results,
-                        output_path=f"rollouts_report_{target_key}.html",
-                    )
-                    print(f"[target {target_prompt_index}] Saved rollouts report: {rollouts_report_path}")
                     if target_cache_file is not None:
                         print(f"[target {target_prompt_index}] Target rollouts cache: {target_cache_file}")
                     if judge_cache_file is not None:
@@ -463,16 +456,6 @@ def run_pipeline_for_target_prompt(
                 if perf
                 else nullcontext()
             ):
-                oracle_report_path = save_oracle_rollouts_html(
-                    oracle_results=report_entries,
-                    oracle_prompt=oracle_prompt,
-                    tokenizer=tokenizer,
-                    output_path=f"oracle_rollouts_report_{target_key}_{oracle_key}.html",
-                )
-                print(
-                    f"[oracle reporting] target_prompt_index={target_prompt_index} oracle_prompt_index={oracle_prompt_index} "
-                    f"Saved oracle report: {oracle_report_path}"
-                )
                 print(
                     f"[oracle reporting] target_prompt_index={target_prompt_index} oracle_prompt_index={oracle_prompt_index} "
                     f"Oracle rollouts cache: {oracle_cache_file}"
