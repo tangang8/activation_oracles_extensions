@@ -1,0 +1,59 @@
+[2026-05-23 04:09:17] Parallel H200 run starting. run_label=parallel_h200_20260523_040917 logs=logs/parallel_h200_20260523_040917
+[2026-05-23 04:09:17] GPU pool: 0 1 2 3
+[2026-05-23 04:09:17] Target shard A offset=0 limit=50
+[2026-05-23 04:09:17] Target shard B offset=50 limit=50
+[2026-05-23 04:09:17] Full deterministic oracle preset: rollout_post_prompt_oracle
+[2026-05-23 04:09:17] Oracle prompt paths: prompts/oracle_prompts/default_oracle_prompts.json,prompts/oracle_prompts/model_answer_min_200_words.json
+[2026-05-23 04:09:17] Job table:
+[2026-05-23 04:09:17]   job=target_shard_A type=target preset=target_judging_only offset=0 limit=50 oracle_prompts_path=none depends_on=none ladder=target_judge
+[2026-05-23 04:09:17]   job=target_shard_B type=target preset=target_judging_only offset=50 limit=50 oracle_prompts_path=none depends_on=none ladder=target_judge
+[2026-05-23 04:09:17]   job=prompt_only_prompt_0 type=prompt_only preset=prompt_only_oracle offset=0 limit=100 oracle_prompts_path=prompts/oracle_prompts/default_oracle_prompts.json depends_on=none ladder=oracle_eval_judge
+[2026-05-23 04:09:17]   job=oracle_target_control type=target_control preset=oracle_target_control offset=0 limit=100 oracle_prompts_path=none depends_on=none ladder=target_judge
+[2026-05-23 04:09:17]   job=prompt_only_prompt_1 type=prompt_only preset=prompt_only_oracle offset=0 limit=100 oracle_prompts_path=prompts/oracle_prompts/model_answer_min_200_words.json depends_on=none ladder=oracle_eval_judge
+[2026-05-23 04:09:17]   job=deterministic_shard_A_prompt_0 type=deterministic preset=rollout_post_prompt_oracle offset=0 limit=50 oracle_prompts_path=prompts/oracle_prompts/default_oracle_prompts.json depends_on=target_shard_A ladder=oracle_eval_judge
+[2026-05-23 04:09:17]   job=deterministic_shard_B_prompt_0 type=deterministic preset=rollout_post_prompt_oracle offset=50 limit=50 oracle_prompts_path=prompts/oracle_prompts/default_oracle_prompts.json depends_on=target_shard_B ladder=oracle_eval_judge
+[2026-05-23 04:09:17]   job=deterministic_shard_A_prompt_1 type=deterministic preset=rollout_post_prompt_oracle offset=0 limit=50 oracle_prompts_path=prompts/oracle_prompts/model_answer_min_200_words.json depends_on=target_shard_A ladder=oracle_eval_judge
+[2026-05-23 04:09:17]   job=deterministic_shard_B_prompt_1 type=deterministic preset=rollout_post_prompt_oracle offset=50 limit=50 oracle_prompts_path=prompts/oracle_prompts/model_answer_min_200_words.json depends_on=target_shard_B ladder=oracle_eval_judge
+[2026-05-23 04:09:17] Launching job=target_shard_A gpu=0 type=target depends_on=none
+[2026-05-23 04:09:17] Starting GPU 0 attempt: ./run_oracle_experiment.sh --preset target_judging_only --target-prompt-offset 0 --target-prompt-limit 50 --num-rollouts 50 --target-judge-batch-size 64 --judge-instruction-path strongReject_v5.jinja2 --judge-thinking off --wandb on --wandb-run-name parallel_h200_20260523_040917__target_shard_A --set WANDB_GROUP=parallel_h200_20260523_040917 --set WANDB_JOB_TYPE=target_shard_A 
+[2026-05-23 04:09:17] Launching job=target_shard_B gpu=1 type=target depends_on=none
+[2026-05-23 04:09:17] Attempt log: logs/parallel_h200_20260523_040917/target_shard_A_attempt-1_target-judge-batch-64.log
+[2026-05-23 04:09:17] Launching job=prompt_only_prompt_0 gpu=2 type=prompt_only depends_on=none
+[2026-05-23 04:09:18] Starting GPU 1 attempt: ./run_oracle_experiment.sh --preset target_judging_only --target-prompt-offset 50 --target-prompt-limit 50 --num-rollouts 50 --target-judge-batch-size 64 --judge-instruction-path strongReject_v5.jinja2 --judge-thinking off --wandb on --wandb-run-name parallel_h200_20260523_040917__target_shard_B --set WANDB_GROUP=parallel_h200_20260523_040917 --set WANDB_JOB_TYPE=target_shard_B 
+[2026-05-23 04:09:18] Attempt log: logs/parallel_h200_20260523_040917/target_shard_B_attempt-1_target-judge-batch-64.log
+[2026-05-23 04:09:18] Launching job=oracle_target_control gpu=3 type=target_control depends_on=none
+[2026-05-23 04:09:18] Starting GPU 2 attempt: ./run_oracle_experiment.sh --preset prompt_only_oracle --target-prompt-offset 0 --target-prompt-limit 100 --num-oracle-rollouts 50 --oracle-prompts-path prompts/oracle_prompts/default_oracle_prompts.json --oracle-eval-batch-size 128 --oracle-judge-batch-size 64 --judge-instruction-path strongReject_v5.jinja2 --judge-thinking off --wandb on --wandb-run-name parallel_h200_20260523_040917__prompt_only_prompt_0 --set WANDB_GROUP=parallel_h200_20260523_040917 --set WANDB_JOB_TYPE=prompt_only_prompt_0 
+[2026-05-23 04:09:18] Attempt log: logs/parallel_h200_20260523_040917/prompt_only_prompt_0_attempt-1_oracle-eval-128_oracle-judge-64.log
+[2026-05-23 04:09:18] Starting GPU 3 attempt: ./run_oracle_experiment.sh --preset oracle_target_control --target-prompt-offset 0 --target-prompt-limit 100 --num-rollouts 50 --target-judge-batch-size 64 --target-thinking off --judge-instruction-path strongReject_v5.jinja2 --judge-thinking off --wandb on --wandb-run-name parallel_h200_20260523_040917__oracle_target_control --set WANDB_GROUP=parallel_h200_20260523_040917 --set WANDB_JOB_TYPE=oracle_target_control 
+[2026-05-23 04:09:18] Attempt log: logs/parallel_h200_20260523_040917/oracle_target_control_attempt-1_target-judge-batch-64.log
+[2026-05-23 04:10:14] Finished GPU 0 attempt successfully: target_shard_A_attempt-1_target-judge-batch-64.log
+[2026-05-23 04:10:15] Finished GPU 3 attempt successfully: oracle_target_control_attempt-1_target-judge-batch-64.log
+[2026-05-23 04:10:15] Finished GPU 1 attempt successfully: target_shard_B_attempt-1_target-judge-batch-64.log
+[2026-05-23 04:10:18] Job completed: target_shard_A gpu=0
+[2026-05-23 04:10:18] Job completed: target_shard_B gpu=1
+[2026-05-23 04:10:18] Job completed: oracle_target_control gpu=3
+[2026-05-23 04:10:18] Finished GPU 2 attempt successfully: prompt_only_prompt_0_attempt-1_oracle-eval-128_oracle-judge-64.log
+[2026-05-23 04:10:23] Launching job=prompt_only_prompt_1 gpu=0 type=prompt_only depends_on=none
+[2026-05-23 04:10:23] Starting GPU 0 attempt: ./run_oracle_experiment.sh --preset prompt_only_oracle --target-prompt-offset 0 --target-prompt-limit 100 --num-oracle-rollouts 50 --oracle-prompts-path prompts/oracle_prompts/model_answer_min_200_words.json --oracle-eval-batch-size 128 --oracle-judge-batch-size 64 --judge-instruction-path strongReject_v5.jinja2 --judge-thinking off --wandb on --wandb-run-name parallel_h200_20260523_040917__prompt_only_prompt_1 --set WANDB_GROUP=parallel_h200_20260523_040917 --set WANDB_JOB_TYPE=prompt_only_prompt_1 
+[2026-05-23 04:10:23] Launching job=deterministic_shard_A_prompt_0 gpu=1 type=deterministic depends_on=target_shard_A
+[2026-05-23 04:10:23] Attempt log: logs/parallel_h200_20260523_040917/prompt_only_prompt_1_attempt-1_oracle-eval-128_oracle-judge-64.log
+[2026-05-23 04:10:23] Starting GPU 1 attempt: ./run_oracle_experiment.sh --preset rollout_post_prompt_oracle --target-prompt-offset 0 --target-prompt-limit 50 --num-rollouts 50 --oracle-prompts-path prompts/oracle_prompts/default_oracle_prompts.json --oracle-eval-batch-size 128 --oracle-judge-batch-size 64 --judge-instruction-path strongReject_v5.jinja2 --judge-thinking off --wandb on --wandb-run-name parallel_h200_20260523_040917__deterministic_shard_A_prompt_0 --set WANDB_GROUP=parallel_h200_20260523_040917 --set WANDB_JOB_TYPE=deterministic_shard_A_prompt_0 
+[2026-05-23 04:10:23] Attempt log: logs/parallel_h200_20260523_040917/deterministic_shard_A_prompt_0_attempt-1_oracle-eval-128_oracle-judge-64.log
+[2026-05-23 04:10:23] Launching job=deterministic_shard_B_prompt_0 gpu=3 type=deterministic depends_on=target_shard_B
+[2026-05-23 04:10:23] Starting GPU 3 attempt: ./run_oracle_experiment.sh --preset rollout_post_prompt_oracle --target-prompt-offset 50 --target-prompt-limit 50 --num-rollouts 50 --oracle-prompts-path prompts/oracle_prompts/default_oracle_prompts.json --oracle-eval-batch-size 128 --oracle-judge-batch-size 64 --judge-instruction-path strongReject_v5.jinja2 --judge-thinking off --wandb on --wandb-run-name parallel_h200_20260523_040917__deterministic_shard_B_prompt_0 --set WANDB_GROUP=parallel_h200_20260523_040917 --set WANDB_JOB_TYPE=deterministic_shard_B_prompt_0 
+[2026-05-23 04:10:23] Job completed: prompt_only_prompt_0 gpu=2
+[2026-05-23 04:10:23] Attempt log: logs/parallel_h200_20260523_040917/deterministic_shard_B_prompt_0_attempt-1_oracle-eval-128_oracle-judge-64.log
+[2026-05-23 04:10:28] Launching job=deterministic_shard_A_prompt_1 gpu=2 type=deterministic depends_on=target_shard_A
+[2026-05-23 04:10:28] Starting GPU 2 attempt: ./run_oracle_experiment.sh --preset rollout_post_prompt_oracle --target-prompt-offset 0 --target-prompt-limit 50 --num-rollouts 50 --oracle-prompts-path prompts/oracle_prompts/model_answer_min_200_words.json --oracle-eval-batch-size 128 --oracle-judge-batch-size 64 --judge-instruction-path strongReject_v5.jinja2 --judge-thinking off --wandb on --wandb-run-name parallel_h200_20260523_040917__deterministic_shard_A_prompt_1 --set WANDB_GROUP=parallel_h200_20260523_040917 --set WANDB_JOB_TYPE=deterministic_shard_A_prompt_1 
+[2026-05-23 04:10:28] Attempt log: logs/parallel_h200_20260523_040917/deterministic_shard_A_prompt_1_attempt-1_oracle-eval-128_oracle-judge-64.log
+[2026-05-23 04:11:10] Finished GPU 1 attempt successfully: deterministic_shard_A_prompt_0_attempt-1_oracle-eval-128_oracle-judge-64.log
+[2026-05-23 04:11:13] Job completed: deterministic_shard_A_prompt_0 gpu=1
+[2026-05-23 04:11:17] Finished GPU 3 attempt successfully: deterministic_shard_B_prompt_0_attempt-1_oracle-eval-128_oracle-judge-64.log
+[2026-05-23 04:11:18] Launching job=deterministic_shard_B_prompt_1 gpu=1 type=deterministic depends_on=target_shard_B
+[2026-05-23 04:11:18] Starting GPU 1 attempt: ./run_oracle_experiment.sh --preset rollout_post_prompt_oracle --target-prompt-offset 50 --target-prompt-limit 50 --num-rollouts 50 --oracle-prompts-path prompts/oracle_prompts/model_answer_min_200_words.json --oracle-eval-batch-size 128 --oracle-judge-batch-size 64 --judge-instruction-path strongReject_v5.jinja2 --judge-thinking off --wandb on --wandb-run-name parallel_h200_20260523_040917__deterministic_shard_B_prompt_1 --set WANDB_GROUP=parallel_h200_20260523_040917 --set WANDB_JOB_TYPE=deterministic_shard_B_prompt_1 
+[2026-05-23 04:11:18] Job completed: deterministic_shard_B_prompt_0 gpu=3
+[2026-05-23 04:11:18] Attempt log: logs/parallel_h200_20260523_040917/deterministic_shard_B_prompt_1_attempt-1_oracle-eval-128_oracle-judge-64.log
+[2026-05-23 05:09:58] Finished GPU 0 attempt successfully: prompt_only_prompt_1_attempt-1_oracle-eval-128_oracle-judge-64.log
+[2026-05-23 05:09:58] Job completed: prompt_only_prompt_1 gpu=0
+[2026-05-23 05:30:49] GPU 1 attempt failed with exit code 130: deterministic_shard_B_prompt_1_attempt-1_oracle-eval-128_oracle-judge-64.log
+[2026-05-23 05:30:49] GPU 2 attempt failed with exit code 130: deterministic_shard_A_prompt_1_attempt-1_oracle-eval-128_oracle-judge-64.log

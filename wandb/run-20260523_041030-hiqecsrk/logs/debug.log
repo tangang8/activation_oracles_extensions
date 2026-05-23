@@ -1,0 +1,28 @@
+2026-05-23 04:10:30,051 INFO    MainThread:5599 [wandb_setup.py:_flush():80] Current SDK version is 0.21.1
+2026-05-23 04:10:30,051 INFO    MainThread:5599 [wandb_setup.py:_flush():80] Configure stats pid to 5599
+2026-05-23 04:10:30,051 INFO    MainThread:5599 [wandb_setup.py:_flush():80] Loading settings from /root/.config/wandb/settings
+2026-05-23 04:10:30,051 INFO    MainThread:5599 [wandb_setup.py:_flush():80] Loading settings from /workspace/activation_oracles_extensions/wandb/settings
+2026-05-23 04:10:30,051 INFO    MainThread:5599 [wandb_setup.py:_flush():80] Loading settings from environment variables
+2026-05-23 04:10:30,051 INFO    MainThread:5599 [wandb_init.py:setup_run_log_directory():703] Logging user logs to /workspace/activation_oracles_extensions/wandb/run-20260523_041030-hiqecsrk/logs/debug.log
+2026-05-23 04:10:30,051 INFO    MainThread:5599 [wandb_init.py:setup_run_log_directory():704] Logging internal logs to /workspace/activation_oracles_extensions/wandb/run-20260523_041030-hiqecsrk/logs/debug-internal.log
+2026-05-23 04:10:30,051 INFO    MainThread:5599 [wandb_init.py:init():830] calling init triggers
+2026-05-23 04:10:30,051 INFO    MainThread:5599 [wandb_init.py:init():835] wandb.init called with sweep_config: {}
+config: {'model_name': 'Qwen/Qwen3-8B', 'oracle_adapter_path': 'adamkarvonen/checkpoints_latentqa_cls_past_lens_addition_Qwen3-8B', 'oracle_adapter_name': 'oracle', 'num_rollouts': 50, 'k_rollouts': 50, 'num_oracle_rollouts': 1, 'oracle_rollout_mode': 'all_target_deterministic', 'dtype': 'torch.bfloat16', 'device': 'cuda', 'world_size': 1, 'rank_zero_device': 'cuda', 'distributed_enabled': False, 'max_new_tokens': 10000, 'oracle_max_new_tokens': 1000, 'oracle_eval_batch_size': 128, 'oracle_judge_batch_size': 64, 'target_judge_batch_size': 16, 'oracle_input_types': ['rollout_segment', 'token_points'], 'oracle_token_point_filter': 'post_prompt', 'judge_thinking_mode': 'off', 'target_thinking_mode': 'default', 'judge_instruction_file': 'strongReject_v5.jinja2', 'target_prompt_offset': 0, 'target_prompt_limit': 50, 'target_prompts_total': 50, 'oracle_prompts_path': '/workspace/activation_oracles_extensions/prompts/oracle_prompts/default_oracle_prompts.json', 'oracle_prompts_total': 1, 'experiment_preset': 'rollout_post_prompt_oracle', 'run_target_rollouts': 1.0, 'run_target_judging': 1.0, 'run_oracle_rollouts': 1.0, 'run_oracle_judging': 1.0, 'target_lora_path': 'default', 'judge_lora_path': 'default', 'oracle_runtime_lora_path': 'oracle', '_wandb': {}}
+2026-05-23 04:10:30,051 INFO    MainThread:5599 [wandb_init.py:init():871] starting backend
+2026-05-23 04:10:30,256 INFO    MainThread:5599 [wandb_init.py:init():874] sending inform_init request
+2026-05-23 04:10:30,263 INFO    MainThread:5599 [wandb_init.py:init():882] backend started and connected
+2026-05-23 04:10:30,264 INFO    MainThread:5599 [wandb_init.py:init():953] updated telemetry
+2026-05-23 04:10:30,268 INFO    MainThread:5599 [wandb_init.py:init():977] communicating run to backend with 90.0 second timeout
+2026-05-23 04:10:30,804 INFO    MainThread:5599 [wandb_init.py:init():1029] starting run threads in backend
+2026-05-23 04:10:30,900 INFO    MainThread:5599 [wandb_run.py:_console_start():2494] atexit reg
+2026-05-23 04:10:30,900 INFO    MainThread:5599 [wandb_run.py:_redirect():2342] redirect: wrap_raw
+2026-05-23 04:10:30,900 INFO    MainThread:5599 [wandb_run.py:_redirect():2411] Wrapping output streams.
+2026-05-23 04:10:30,901 INFO    MainThread:5599 [wandb_run.py:_redirect():2434] Redirects installed.
+2026-05-23 04:10:30,902 INFO    MainThread:5599 [wandb_init.py:init():1075] run started, returning control to user process
+2026-05-23 04:11:05,340 INFO    MainThread:5599 [wandb_run.py:_finish():2260] finishing run tangang8-t/activation-oracles-extensions/hiqecsrk
+2026-05-23 04:11:05,340 INFO    MainThread:5599 [wandb_run.py:_atexit_cleanup():2459] got exitcode: 0
+2026-05-23 04:11:05,341 INFO    MainThread:5599 [wandb_run.py:_restore():2441] restore
+2026-05-23 04:11:05,341 INFO    MainThread:5599 [wandb_run.py:_restore():2447] restore done
+2026-05-23 04:11:06,606 INFO    MainThread:5599 [wandb_run.py:_footer_history_summary_info():3895] rendering history
+2026-05-23 04:11:06,609 INFO    MainThread:5599 [wandb_run.py:_footer_history_summary_info():3927] rendering summary
+2026-05-23 04:11:06,610 INFO    MainThread:5599 [wandb_run.py:_footer_sync_info():3856] logging synced files

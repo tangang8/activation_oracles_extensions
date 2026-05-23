@@ -1,0 +1,153 @@
+_wandb:
+    value:
+        cli_version: 0.21.1
+        e:
+            ytc4o0e9h50alu7y8usrm9rbdb0dk7zu:
+                codePath: bypass_refusal.py
+                codePathLocal: bypass_refusal.py
+                cpu_count: 112
+                cpu_count_logical: 224
+                cudaVersion: "12.8"
+                disk:
+                    /:
+                        total: "215822106624"
+                        used: "39167868928"
+                email: angelaatang@gmail.com
+                executable: /workspace/.venv/bin/python
+                git:
+                    commit: 1b010b62a301f1dd7cbf031400aef8adbdea1187
+                    remote: git@github.com:tangang8/activation_oracles_extensions
+                gpu: NVIDIA H200
+                gpu_count: 4
+                gpu_nvidia:
+                    - architecture: Hopper
+                      cudaCores: 16896
+                      memoryTotal: "150754820096"
+                      name: NVIDIA H200
+                      uuid: GPU-79687643-93f8-7b36-349a-8f05b89e6678
+                    - architecture: Hopper
+                      cudaCores: 16896
+                      memoryTotal: "150754820096"
+                      name: NVIDIA H200
+                      uuid: GPU-317bba70-b882-ca12-2b8b-173e2db3be03
+                    - architecture: Hopper
+                      cudaCores: 16896
+                      memoryTotal: "150754820096"
+                      name: NVIDIA H200
+                      uuid: GPU-cc84663f-d6cd-d900-0d4c-118462dced2e
+                    - architecture: Hopper
+                      cudaCores: 16896
+                      memoryTotal: "150754820096"
+                      name: NVIDIA H200
+                      uuid: GPU-5fb2a9b9-546c-3788-31a7-dacaa250a210
+                host: 04e4259e523b
+                memory:
+                    total: "2164193775616"
+                os: Linux-5.15.0-157-generic-x86_64-with-glibc2.39
+                program: /workspace/activation_oracles_extensions/bypass_refusal.py
+                python: CPython 3.12.3
+                root: /workspace/activation_oracles_extensions
+                startedAt: "2026-05-23T04:09:25.872670Z"
+                writerId: ytc4o0e9h50alu7y8usrm9rbdb0dk7zu
+        m: []
+        python_version: 3.12.3
+        t:
+            "1":
+                - 1
+                - 11
+                - 41
+                - 49
+                - 51
+                - 71
+                - 98
+                - 105
+            "2":
+                - 1
+                - 11
+                - 41
+                - 49
+                - 51
+                - 71
+                - 98
+                - 105
+            "3":
+                - 2
+                - 13
+                - 16
+            "4": 3.12.3
+            "5": 0.21.1
+            "6": 4.55.2
+            "10":
+                - 20
+            "12": 0.21.1
+            "13": linux-x86_64
+device:
+    value: cuda
+distributed_enabled:
+    value: false
+dtype:
+    value: torch.bfloat16
+experiment_preset:
+    value: target_judging_only
+judge_instruction_file:
+    value: strongReject_v5.jinja2
+judge_lora_path:
+    value: default
+judge_thinking_mode:
+    value: "off"
+k_rollouts:
+    value: 0
+max_new_tokens:
+    value: 10000
+model_name:
+    value: Qwen/Qwen3-8B
+num_oracle_rollouts:
+    value: 1
+num_rollouts:
+    value: 50
+oracle_adapter_name:
+    value: oracle
+oracle_adapter_path:
+    value: adamkarvonen/checkpoints_latentqa_cls_past_lens_addition_Qwen3-8B
+oracle_eval_batch_size:
+    value: 32
+oracle_input_types:
+    value: null
+oracle_judge_batch_size:
+    value: 16
+oracle_max_new_tokens:
+    value: 1000
+oracle_prompts_path:
+    value: /workspace/activation_oracles_extensions/prompts/oracle_prompts/default_oracle_prompts.json
+oracle_prompts_total:
+    value: 0
+oracle_rollout_mode:
+    value: all_target_deterministic
+oracle_runtime_lora_path:
+    value: oracle
+oracle_token_point_filter:
+    value: all
+rank_zero_device:
+    value: cuda
+run_oracle_judging:
+    value: 0
+run_oracle_rollouts:
+    value: 0
+run_target_judging:
+    value: 1
+run_target_rollouts:
+    value: 1
+target_judge_batch_size:
+    value: 64
+target_lora_path:
+    value: default
+target_prompt_limit:
+    value: 50
+target_prompt_offset:
+    value: 50
+target_prompts_total:
+    value: 50
+target_thinking_mode:
+    value: default
+world_size:
+    value: 1

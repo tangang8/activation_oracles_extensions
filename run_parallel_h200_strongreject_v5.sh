@@ -10,6 +10,7 @@ RUN_ORACLE_EXPERIMENT="${RUN_ORACLE_EXPERIMENT:-./run_oracle_experiment.sh}"
 
 TARGET_PROMPT_TOTAL="${TARGET_PROMPT_TOTAL:-100}"
 TARGET_PROMPT_SPLIT="${TARGET_PROMPT_SPLIT:-50}"
+DETERMINISTIC_SHARD_COUNT="${DETERMINISTIC_SHARD_COUNT:-10}"
 NUM_ROLLOUTS="${NUM_ROLLOUTS:-50}"
 NUM_ORACLE_ROLLOUTS="${NUM_ORACLE_ROLLOUTS:-50}"
 
@@ -261,6 +262,9 @@ shard_b_limit=$((TARGET_PROMPT_TOTAL - TARGET_PROMPT_SPLIT))
 if (( shard_a_limit < 0 || shard_b_limit < 0 )); then
   die "TARGET_PROMPT_SPLIT ($TARGET_PROMPT_SPLIT) must be between 0 and TARGET_PROMPT_TOTAL ($TARGET_PROMPT_TOTAL)."
 fi
+if (( DETERMINISTIC_SHARD_COUNT <= 0 )); then
+  die "DETERMINISTIC_SHARD_COUNT must be >= 1."
+fi
 
 declare -a JOB_ID=()
 declare -a JOB_TYPE=()
@@ -481,10 +485,24 @@ for prompt_idx in "${!ORACLE_PROMPT_PATH_ARRAY[@]}"; do
 done
 
 for prompt_idx in "${!ORACLE_PROMPT_PATH_ARRAY[@]}"; do
-  add_job "deterministic_shard_A_prompt_${prompt_idx}" "deterministic" "$FULL_DETERMINISTIC_PRESET" "$shard_a_offset" "$shard_a_limit" "${ORACLE_PROMPT_PATH_ARRAY[$prompt_idx]}" "target_shard_A" "oracle_eval_judge"
-  if (( shard_b_limit > 0 )); then
-    add_job "deterministic_shard_B_prompt_${prompt_idx}" "deterministic" "$FULL_DETERMINISTIC_PRESET" "$shard_b_offset" "$shard_b_limit" "${ORACLE_PROMPT_PATH_ARRAY[$prompt_idx]}" "target_shard_B" "oracle_eval_judge"
-  fi
+  for ((det_shard_idx=0; det_shard_idx<DETERMINISTIC_SHARD_COUNT; det_shard_idx++)); do
+    det_offset=$(( (det_shard_idx * TARGET_PROMPT_TOTAL) / DETERMINISTIC_SHARD_COUNT ))
+    det_next_offset=$(( ((det_shard_idx + 1) * TARGET_PROMPT_TOTAL) / DETERMINISTIC_SHARD_COUNT ))
+    det_limit=$(( det_next_offset - det_offset ))
+    if (( det_limit <= 0 )); then
+      continue
+    fi
+
+    det_dep="target_shard_A"
+    if (( det_offset >= TARGET_PROMPT_SPLIT )); then
+      if (( shard_b_limit <= 0 )); then
+        die "Deterministic shard offset ${det_offset} requires target_shard_B, but target_shard_B is not configured."
+      fi
+      det_dep="target_shard_B"
+    fi
+
+    add_job "deterministic_shard_${det_shard_idx}_prompt_${prompt_idx}" "deterministic" "$FULL_DETERMINISTIC_PRESET" "$det_offset" "$det_limit" "${ORACLE_PROMPT_PATH_ARRAY[$prompt_idx]}" "$det_dep" "oracle_eval_judge"
+  done
 done
 
 log "Parallel H200 run starting. run_label=$RUN_LABEL logs=$LOG_ROOT"
@@ -496,6 +514,7 @@ else
   log "Target shard B omitted because limit=0"
 fi
 log "Full deterministic oracle preset: $FULL_DETERMINISTIC_PRESET"
+log "Deterministic shard count: $DETERMINISTIC_SHARD_COUNT"
 log "Oracle prompt paths: $ORACLE_PROMPTS_PATHS"
 log_job_table
 

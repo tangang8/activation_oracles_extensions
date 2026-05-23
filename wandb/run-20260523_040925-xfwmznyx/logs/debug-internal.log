@@ -1,0 +1,12 @@
+{"time":"2026-05-23T04:09:26.09205295Z","level":"INFO","msg":"stream: starting","core version":"0.21.1"}
+{"time":"2026-05-23T04:09:26.364282296Z","level":"INFO","msg":"stream: created new stream","id":"xfwmznyx"}
+{"time":"2026-05-23T04:09:26.36435006Z","level":"INFO","msg":"stream: started","id":"xfwmznyx"}
+{"time":"2026-05-23T04:09:26.364412671Z","level":"INFO","msg":"writer: started","stream_id":"xfwmznyx"}
+{"time":"2026-05-23T04:09:26.364474791Z","level":"INFO","msg":"sender: started","stream_id":"xfwmznyx"}
+{"time":"2026-05-23T04:09:26.364651673Z","level":"INFO","msg":"handler: started","stream_id":"xfwmznyx"}
+{"time":"2026-05-23T04:10:13.471173843Z","level":"INFO","msg":"fileTransfer: Close: file transfer manager closed"}
+{"time":"2026-05-23T04:10:13.867490738Z","level":"INFO","msg":"handler: operation stats","stats":{"operations":[{"desc":"uploading history steps 0-305, summary, console lines 7-3677","runtime_seconds":0.389227006}],"total_operations":1}}
+{"time":"2026-05-23T04:10:13.880555448Z","level":"INFO","msg":"stream: closing","id":"xfwmznyx"}
+{"time":"2026-05-23T04:10:13.880594941Z","level":"INFO","msg":"handler: closed","stream_id":"xfwmznyx"}
+{"time":"2026-05-23T04:10:13.880713357Z","level":"INFO","msg":"sender: closed","stream_id":"xfwmznyx"}
+{"time":"2026-05-23T04:10:13.880744035Z","level":"INFO","msg":"stream: closed","id":"xfwmznyx"}
