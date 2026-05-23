@@ -1,0 +1,12 @@
+{"time":"2026-05-23T00:21:03.866691599Z","level":"INFO","msg":"stream: starting","core version":"0.21.1"}
+{"time":"2026-05-23T00:21:04.256954693Z","level":"INFO","msg":"stream: created new stream","id":"crkg3irl"}
+{"time":"2026-05-23T00:21:04.257026918Z","level":"INFO","msg":"stream: started","id":"crkg3irl"}
+{"time":"2026-05-23T00:21:04.257068264Z","level":"INFO","msg":"writer: started","stream_id":"crkg3irl"}
+{"time":"2026-05-23T00:21:04.257070285Z","level":"INFO","msg":"sender: started","stream_id":"crkg3irl"}
+{"time":"2026-05-23T00:21:04.257213644Z","level":"INFO","msg":"handler: started","stream_id":"crkg3irl"}
+{"time":"2026-05-23T00:21:34.280989042Z","level":"INFO","msg":"fileTransfer: Close: file transfer manager closed"}
+{"time":"2026-05-23T00:21:34.634793961Z","level":"INFO","msg":"handler: operation stats","stats":{"operations":[{"desc":"uploading history steps 0-305, summary, console lines 7-3677","runtime_seconds":0.346265185}],"total_operations":1}}
+{"time":"2026-05-23T00:21:34.688855858Z","level":"INFO","msg":"stream: closing","id":"crkg3irl"}
+{"time":"2026-05-23T00:21:34.688899543Z","level":"INFO","msg":"handler: closed","stream_id":"crkg3irl"}
+{"time":"2026-05-23T00:21:34.688965435Z","level":"INFO","msg":"sender: closed","stream_id":"crkg3irl"}
+{"time":"2026-05-23T00:21:34.689002785Z","level":"INFO","msg":"stream: closed","id":"crkg3irl"}
