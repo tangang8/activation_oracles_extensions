@@ -147,6 +147,15 @@ class CompileStrongRejectResultsTests(unittest.TestCase):
                             "rollout_segment": {"score": 0.8, "score_scale": "strongreject_0_1"},
                             "token_points": {"first_rollout_token": {"score": 0.1, "score_scale": "strongreject_0_1"}},
                         },
+                    },
+                    {
+                        "rollout_index": 1,
+                        "target_rollout_index": 1,
+                        "oracle_rollout_index": 0,
+                        "compliance": {
+                            "rollout_segment": {"score": 0.2, "score_scale": "strongreject_0_1"},
+                            "token_points": {"first_rollout_token": {"score": 0.3, "score_scale": "strongreject_0_1"}},
+                        },
                     }
                 ],
             )
@@ -177,7 +186,26 @@ class CompileStrongRejectResultsTests(unittest.TestCase):
                 for row in summary
                 if row["condition"] == "target_rollout_oracle" and row["probe_name"] == "rollout_segment"
             ][0]
-            self.assertEqual(rollout["asr_0_8"], "1.0")
+            self.assertEqual(rollout["mean_score"], "0.5")
+            self.assertEqual(rollout["asr_0_8"], "0.5")
+
+            with (cfg.output_dir / "strongreject_prompt_level.csv").open("r", encoding="utf-8") as f:
+                prompt_level = list(csv.DictReader(f))
+            rollout_prompt = [
+                row
+                for row in prompt_level
+                if row["condition"] == "target_rollout_oracle" and row["probe_name"] == "rollout_segment"
+            ][0]
+            self.assertEqual(rollout_prompt["n_scored"], "2")
+            self.assertNotEqual(rollout_prompt["sd_within_prompt_target_rollouts"], "")
+
+            self.assertFalse(
+                any(
+                    warning.get("condition") == "target_rollout_oracle"
+                    and warning.get("reason") == "more than one target_rollout_index found"
+                    for warning in manifest.get("coverage_warnings", [])
+                )
+            )
 
             with (cfg.output_dir / "strongreject_details.csv").open("r", encoding="utf-8") as f:
                 details = list(csv.DictReader(f))

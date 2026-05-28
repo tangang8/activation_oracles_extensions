@@ -628,22 +628,6 @@ def compile_strongreject_results(
                         cache_path=path,
                         manifest=manifest,
                     )
-                    if condition == "target_rollout_oracle":
-                        rollout_indices = {
-                            row.get("target_rollout_index")
-                            for row in rows
-                            if row.get("target_rollout_index") is not None
-                        }
-                        if len(rollout_indices) > 1:
-                            manifest["coverage_warnings"].append(
-                                {
-                                    "condition": condition,
-                                    "target_prompt_index": target_prompt_index,
-                                    "reason": "more than one target_rollout_index found",
-                                    "target_rollout_indices": sorted(str(x) for x in rollout_indices),
-                                    "path": str(path),
-                                }
-                            )
                     detail_rows.extend(rows)
 
     prompt_rows = _prompt_level_rows(detail_rows, cfg.thresholds)

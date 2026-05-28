@@ -57,7 +57,7 @@ class RunParallelScriptTests(unittest.TestCase):
             self.assertIn("run_label=unit_parallel_label", proc.stdout)
             self.assertIn("GPU pool: 0 1 2 3", proc.stdout)
             self.assertIn("Job table:", proc.stdout)
-            self.assertIn("job=deterministic_shard_A_prompt_0", proc.stdout)
+            self.assertIn("job=deterministic_shard_0_prompt_0", proc.stdout)
             self.assertIn("depends_on=target_shard_A", proc.stdout)
             self.assertIn("Summary done:", proc.stdout)
             self.assertIn("Summary failed: <none>", proc.stdout)
@@ -78,8 +78,11 @@ class RunParallelScriptTests(unittest.TestCase):
                 self.assertEqual(proc.returncode, 0)
                 self.assertIn(f"GPU pool: {gpu_ids.replace(',', ' ')}", proc.stdout)
                 self.assertIn("All parallel jobs completed successfully.", proc.stdout)
-                self.assertEqual(proc.stdout.count("job=deterministic_shard_A_prompt_0 type="), 1)
-                self.assertEqual(proc.stdout.count("job=deterministic_shard_B_prompt_0 type="), 1)
+                self.assertEqual(proc.stdout.count(" type=deterministic preset="), 4)
+                self.assertIn("job=deterministic_shard_4_prompt_0 type=", proc.stdout)
+                self.assertIn("job=deterministic_shard_9_prompt_0 type=", proc.stdout)
+                self.assertIn("job=deterministic_shard_4_prompt_1 type=", proc.stdout)
+                self.assertIn("job=deterministic_shard_9_prompt_1 type=", proc.stdout)
 
     def test_non_oom_failure_fails_sequence(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
