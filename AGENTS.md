@@ -72,7 +72,7 @@ Strong success criteria allow independent verification. Weak criteria ("make it 
 
 ## Project Overview
 
-**activation_oracles_extensions** extends the upstream [activation_oracles](https://github.com/adamkarvonen/activation_oracles) repository with experimental utilities for oracle rollout modes and evaluation pipelines. The project runs multi-stage experiments that generate target model responses, judge them with classification models, and optionally run oracle-guided rollouts using activation probes.
+**activation_oracles_bypass_refusal** extends the upstream [activation_oracles](https://github.com/adamkarvonen/activation_oracles) repository with experimental utilities for oracle rollout modes and evaluation pipelines. The project runs multi-stage experiments that generate target model responses, judge them with classification models, and optionally run oracle-guided rollouts using activation probes.
 
 **Key capability**: Oracle rollout modes allow generating responses based on different oracle input strategies (deterministic, sampled with repeats, or prompt-only), with flexible stage gates to skip target generation, target judging, oracle generation, or oracle judging as needed.
 
@@ -82,7 +82,7 @@ This repo requires a specific parent-folder layout:
 
 ```
 <parent-folder>/
-├── activation_oracles_extensions/  (this repo)
+├── activation_oracles_bypass_refusal/  (this repo)
 └── activation_oracles/              (upstream repo)
 ```
 
@@ -130,13 +130,13 @@ Both repos should be cloned with exact names. The activation_oracles repo is imp
 ### Run Tests
 ```bash
 # From repo root, run all tests
-PYTHONPATH="activation_oracles_extensions:activation_oracles_extensions/results" python -m unittest discover -v -s "activation_oracles_extensions/tests"
+PYTHONPATH=".:results" python -m unittest discover -v -s tests
 
 # Run a specific test file
-PYTHONPATH="activation_oracles_extensions:activation_oracles_extensions/results" python -m unittest activation_oracles_extensions.tests.test_prompt_utils -v
+PYTHONPATH=".:results" python -m unittest tests.test_prompt_utils -v
 
 # Run a specific test class or method
-PYTHONPATH="activation_oracles_extensions:activation_oracles_extensions/results" python -m unittest activation_oracles_extensions.tests.test_prompt_utils.PromptUtilsTests.test_prompt_key_hash_length -v
+PYTHONPATH=".:results" python -m unittest tests.test_prompt_utils.PromptUtilsTests.test_prompt_key_hash_length -v
 ```
 
 ### Bash Script Syntax Check

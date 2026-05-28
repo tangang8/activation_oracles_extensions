@@ -5,11 +5,11 @@ Minimal oracle-as-target chat generation smoke test.
 Loads Qwen3-8B + oracle LoRA, takes prompts from the harmful dataset,
 and generates one stochastic completion per prompt in a single batched call.
 
-Usage (from activation_oracles_extensions/):
+Usage (from activation_oracles_bypass_refusal/):
   python test_oracle_chat.py
   python test_oracle_chat.py --num-prompts 3
   python test_oracle_chat.py --num-prompts 3
-  # writes to activation_oracles_extensions/test_oracle_chat_output/oracle_thinking/ by default
+  # writes to activation_oracles_bypass_refusal/test_oracle_chat_output/oracle_thinking/ by default
 """
 
 from __future__ import annotations

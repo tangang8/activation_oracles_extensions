@@ -1,4 +1,4 @@
-# activation_oracles_extensions
+# activation_oracles_bypass_refusal
 
 This folder contains the experiment pipeline for testing whether an activation oracle can extract compliant answers from a safety-trained target model's internal activations. The current experiment suite uses [Qwen/Qwen3-8B](https://huggingface.co/Qwen/Qwen3-8B), a pre-trained [oracle LoRA adapter](https://huggingface.co/adamkarvonen/checkpoints_latentqa_cls_past_lens_addition_Qwen3-8B) from [Karvonen et al.](https://arxiv.org/abs/2512.15674) ([code](https://github.com/adamkarvonen/activation_oracles)), harmful target prompts from [`LLM-LAT/harmful-dataset`](https://huggingface.co/datasets/LLM-LAT/harmful-dataset), and the [StrongReject](https://github.com/alexandrasouly/strongreject/blob/main/strongreject/strongreject_evaluator_prompt.txt) rubric for judging.
 
@@ -45,7 +45,7 @@ The longer statistical motivation is in `results/experiment_design.md`.
 ## Repository Layout
 
 ```text
-activation_oracles_extensions/
+activation_oracles_bypass_refusal/
 ├── run_oracle_experiment.sh          # Main shell entrypoint and preset manager.
 ├── bypass_refusal.py                 # Main Python experiment pipeline.
 ├── run_parallel_strongreject_v5.sh   # Multi-GPU job scheduler for the StrongReject experiment suite.
@@ -76,7 +76,7 @@ The extension code imports utilities from the upstream activation oracle repo as
 
 ```text
 <parent-folder>/
-├── activation_oracles_extensions
+├── activation_oracles_bypass_refusal
 └── activation_oracles
 ```
 
@@ -84,7 +84,7 @@ Clone commands:
 
 ```bash
 cd <parent-folder>
-git clone git@github.com:tangang8/activation_oracles_extensions
+git clone git@github.com:tangang8/activation_oracles_bypass_refusal
 git clone git@github.com:adamkarvonen/activation_oracles
 ```
 
@@ -117,7 +117,7 @@ WANDB_ENTITY=...
 The main command-line entrypoint is:
 
 ```bash
-cd activation_oracles_extensions
+cd activation_oracles_bypass_refusal
 ./run_oracle_experiment.sh --help
 ```
 
@@ -798,16 +798,15 @@ Logged metrics include rollout compliance summaries, oracle cache status, oracle
 From the repository root:
 
 ```bash
-PYTHONPATH="activation_oracles_extensions" \
-python -m unittest discover -v -s "activation_oracles_extensions/tests"
+PYTHONPATH=".:results" python -m unittest discover -v -s tests
 ```
 
 Shell syntax checks:
 
 ```bash
-bash -n activation_oracles_extensions/run_oracle_experiment.sh
-bash -n activation_oracles_extensions/run_parallel_strongreject_v5.sh
-bash -n activation_oracles_extensions/run_overnight_strongreject_v5.sh
+bash -n run_oracle_experiment.sh
+bash -n run_parallel_strongreject_v5.sh
+bash -n run_overnight_strongreject_v5.sh
 ```
 
 ## Small Smoke Runs
