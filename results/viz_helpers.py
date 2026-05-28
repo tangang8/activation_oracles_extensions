@@ -17,10 +17,21 @@ CONDITION_LABELS = {
     'target_rollout_oracle': 'Target Rollout Oracle',
 }
 
+# Display ordering for the condition column. Used by apply_probe_sort and any
+# table that pivots/sorts by condition so the experiment progression is shown
+# left-to-right / top-to-bottom: baselines first, then the two oracle modes.
+CONDITION_ORDER: dict[str, int] = {name: i for i, name in enumerate(CONDITION_LABELS.keys())}
+
+
+def condition_rank(value) -> float:
+    """Return the configured display rank for a condition name (1e9 if unknown)."""
+    return CONDITION_ORDER.get(value, 1e9)
+
 SCORE_COLS = {
     'mean_score', 'se_score', 'asr_0_2', 'asr_0_2_se', 'asr_0_5', 'asr_0_5_se',
     'asr_0_8', 'asr_0_8_se', 'asr_1', 'asr_1_se',
-    'sd_score_within_prompt', 'mean_within_prompt_sd', 'median_within_prompt_sd',
+    'sd_within_prompt_oracle_rollouts', 'sd_within_prompt_target_rollouts',
+    'mean_within_prompt_sd_oracle_rollouts', 'mean_within_prompt_sd_target_rollouts',
     'score',
 }
 
@@ -29,11 +40,33 @@ def display_condition(value: str) -> str:
     return CONDITION_LABELS.get(value, value)
 
 
+ORACLE_PROMPT_FILE_LABELS = {
+    'default_oracle_prompts': 'Oracle Prompt A',
+    'model_answer_min_200_words': 'Oracle Prompt B',
+}
+
+
 def display_oracle_prompt_file(value) -> str | None:
     if pd.isna(value):
         return None
     name = Path(str(value)).name
-    return name[:-5] if name.endswith('.json') else name
+    stem = name[:-5] if name.endswith('.json') else name
+    return ORACLE_PROMPT_FILE_LABELS.get(stem, stem)
+
+
+PATH_SEGMENT_ALIASES: dict[str, str] = {
+    'Decode_these_activations_into_the_most_detailed_67e237049b5359ee': 'Decode',
+    'What_is_the_model_s_answer_Provide_specific_det_ab6f30fe97edfb33': 'What',
+}
+
+
+def apply_path_segment_aliases(text):
+    """Replace known long path segments with their short display labels."""
+    if not isinstance(text, str):
+        return text
+    for raw, short in PATH_SEGMENT_ALIASES.items():
+        text = text.replace(raw, short)
+    return text
 
 
 class PathAliaser:
@@ -45,7 +78,7 @@ class PathAliaser:
         cache_root: Path | str,
         output_dir: Path | str,
         paths_for_aliasing: list[str] | None = None,
-        max_aliases: int = 8,
+        max_aliases: int = 52,
     ):
         self.target_model_dir = f"target_{target_model_name.replace('/', '_')}"
         self.target_marker = f"/{self.target_model_dir}/"
@@ -66,39 +99,100 @@ class PathAliaser:
             return path_text[len(out_prefix):]
         return path_text
 
-    def _build_aliases(self, paths: list[str], max_aliases: int = 8) -> dict[str, str]:
+    @staticmethod
+    def _alias_labels(n: int) -> list[str]:
+        """Generate up to n letter labels: A..Z, then AA..AZ, BA..BZ, ..."""
+        letters = [chr(ord('A') + i) for i in range(26)]
+        out = list(letters)
+        for first in letters:
+            for second in letters:
+                if len(out) >= n:
+                    return out[:n]
+                out.append(first + second)
+        return out[:n]
+
+    def _build_aliases(self, paths: list[str], max_aliases: int = 52) -> dict[str, str]:
+        # Use the longest prefix per path (its parent directory) so the alias
+        # collapses as much of the path as possible — only the filename remains visible.
         counts: dict[str, int] = {}
         for p in paths:
             tail = self._path_tail(str(p))
             parts = [x for x in tail.split('/') if x]
-            if len(parts) >= 3:
-                prefix = '/'.join(parts[:3])
+            if len(parts) >= 2:
+                prefix = '/'.join(parts[:-1])
                 counts[prefix] = counts.get(prefix, 0) + 1
         ranked = sorted(counts.items(), key=lambda kv: (-kv[1], kv[0]))
-        return {f"@P{i}": prefix for i, (prefix, _) in enumerate(ranked[:max_aliases], start=1)}
+        labels = self._alias_labels(min(len(ranked), max_aliases))
+        return {labels[i]: prefix for i, (prefix, _) in enumerate(ranked[:max_aliases])}
 
     def alias(self, path) -> str:
         if pd.isna(path):
             return path
         tail = self._path_tail(str(path))
+        result = tail
         for alias, prefix in self._aliases.items():
             marker = prefix + '/'
             if tail.startswith(marker):
-                return f"{alias}/{tail[len(marker):]}"
+                result = f"{alias}/{tail[len(marker):]}"
+                break
             if tail == prefix:
-                return alias
-        return tail
+                result = alias
+                break
+        return apply_path_segment_aliases(result)
 
     def add_alias_column(self, df: pd.DataFrame, source_col: str, alias_col: str) -> pd.DataFrame:
         out = df.copy()
         out[alias_col] = out[source_col].map(self.alias)
         return out
 
+    @staticmethod
+    def _common_root(prefixes: list[str]) -> str:
+        """Longest component-wise common prefix of the given path-like strings."""
+        if not prefixes:
+            return ''
+        split = [[x for x in p.split('/') if x] for p in prefixes]
+        common: list[str] = []
+        for components in zip(*split):
+            first = components[0]
+            if all(c == first for c in components):
+                common.append(first)
+            else:
+                break
+        return '/'.join(common)
+
     def legend_df(self) -> pd.DataFrame:
-        return pd.DataFrame([
-            {'alias': alias, 'shared_subdir_prefix': prefix}
-            for alias, prefix in self._aliases.items()
-        ])
+        common = self._common_root(list(self._aliases.values()))
+        prefix_strip = common + '/' if common else ''
+        rows = []
+        for alias, prefix in self._aliases.items():
+            shown = prefix[len(prefix_strip):] if prefix_strip and prefix.startswith(prefix_strip) else (
+                '' if prefix == common else prefix
+            )
+            rows.append({'alias': alias, 'shared_subdir_prefix': apply_path_segment_aliases(shown)})
+        return pd.DataFrame(rows)
+
+    def _repr_html_(self) -> str:
+        # When Jupyter auto-renders the aliaser (e.g. as a cell's return value),
+        # show the legend table instead of the default <PathAliaser at 0x...> repr.
+        if not self._aliases:
+            return (
+                '<div><b>Path alias legend (letter -> shared parent directory):</b></div>'
+                '<div><i>(no path aliases — all paths shown in full)</i></div>'
+            )
+        common = self._common_root(list(self._aliases.values()))
+        header = '<div><b>Path alias legend (letter -> shared parent directory)'
+        if common:
+            header += f' &mdash; common root: <code>{apply_path_segment_aliases(common)}/</code>'
+        header += ':</b></div>'
+        df = self.legend_df()
+        with pd.option_context('display.max_colwidth', None):
+            table_html = df.to_html(index=False)
+        table_html = table_html.replace(
+            '<table',
+            '<table style="white-space: nowrap; text-align: left;"',
+            1,
+        )
+        return header + table_html
 
 
 _SCORE_LIKE_COLS = {
@@ -107,8 +201,10 @@ _SCORE_LIKE_COLS = {
 }
 _UNCERTAINTY_LIKE_COLS = {
     'se_score', 'asr_0_2_se', 'asr_0_5_se', 'asr_0_8_se', 'asr_1_se',
-    'mean_within_prompt_sd', 'median_within_prompt_sd',
-    'SE Across Prompts', 'Mean Within-Prompt SD', 'Median Within-Prompt SD',
+    'sd_within_prompt_oracle_rollouts', 'sd_within_prompt_target_rollouts',
+    'mean_within_prompt_sd_oracle_rollouts', 'mean_within_prompt_sd_target_rollouts',
+    'SE Across Prompts',
+    'Within-Prompt Std across Oracle Rollouts', 'Within-Prompt Std across Target Rollouts',
     'ASR >= 0.2 SE Across Prompts', 'ASR >= 0.5 SE Across Prompts',
     'ASR >= 0.8 SE Across Prompts', 'ASR = 1.0 SE Across Prompts',
 }
@@ -248,10 +344,314 @@ def percent_style(df: pd.DataFrame, extra_pct_cols=None, relative_score_norm: bo
     return styler
 
 
-def clip_text(value, n: int = 180):
+def _fmt_pct(value, na_rep: str = '—') -> str:
+    if pd.isna(value):
+        return na_rep
+    return f'{float(value) * 100:.1f}%'
+
+
+def _fmt_mean_pm_se(mean, se, na_rep: str = '—') -> str:
+    if pd.isna(mean):
+        return na_rep
+    if pd.isna(se):
+        return f'{float(mean) * 100:.1f}%'
+    return f'{float(mean) * 100:.1f}% ± {float(se) * 100:.1f}%'
+
+
+def _gradient_styles_for_columns(
+    out: pd.DataFrame,
+    column_means: dict[str, pd.Series],
+    cmap_name: str,
+    shared: bool,
+    alpha: float = _HEATMAP_ALPHA,
+) -> None:
+    """Mutate `out` (a CSS-string DataFrame) to add a heatmap gradient.
+
+    column_means maps display column name -> numeric Series (aligned to out's rows).
+    If shared=True, vmin/vmax come from pooling all column values; else per-column.
+    """
+    cmap = plt.get_cmap(cmap_name)
+    base = 'text-align: right; font-variant-numeric: tabular-nums; padding: 5px 8px; vertical-align: middle;'
+
+    def _color(val, norm) -> str:
+        if pd.isna(val):
+            return base
+        try:
+            v = float(val)
+        except (TypeError, ValueError):
+            return base
+        if not np.isfinite(v):
+            return base
+        rgba = cmap(norm(v))
+        r, g, b = int(rgba[0] * 255), int(rgba[1] * 255), int(rgba[2] * 255)
+        fg = _contrasting_text(r, g, b, alpha)
+        return f'background-color: rgba({r},{g},{b},{alpha}); color: {fg}; {base}'
+
+    if shared:
+        pooled = pd.concat([s for s in column_means.values()]).dropna()
+        if pooled.empty:
+            return
+        norm = mcolors.Normalize(vmin=float(pooled.min()), vmax=float(pooled.max()))
+        for col, series in column_means.items():
+            if col in out.columns:
+                out[col] = [_color(v, norm) for v in series.to_list()]
+    else:
+        for col, series in column_means.items():
+            vals = series.dropna()
+            if vals.empty or col not in out.columns:
+                continue
+            norm = mcolors.Normalize(vmin=float(vals.min()), vmax=float(vals.max()))
+            out[col] = [_color(v, norm) for v in series.to_list()]
+
+
+def render_score_std_table(
+    df: pd.DataFrame,
+    *,
+    include_within_prompt_std_oracle: bool = True,
+    include_within_prompt_std_target: bool = True,
+):
+    """Build a Score + uncertainty table from summary rows.
+
+    Columns: condition, probe_name, oracle_prompt_file,
+        Mean Score                                        (green gradient on its own scale)
+        SE Across Prompts                                 (one shared orange-red gradient)
+        Within-Prompt Std across Oracle Rollouts          (shared orange-red gradient)
+        Within-Prompt Std across Target Rollouts          (shared orange-red gradient)
+
+    SE and Within-Prompt Std measure *different* uncertainties (precision of the
+    across-prompts mean vs typical within-prompt rollout variability), so they
+    are kept as separate columns — only the visual gradient is shared.
+    """
+    src = df.reset_index(drop=True)
+    keep = ['condition', 'probe_name', 'oracle_prompt_file']
+    se_col = 'se_score'
+    sd_oracle = 'mean_within_prompt_sd_oracle_rollouts'
+    sd_target = 'mean_within_prompt_sd_target_rollouts'
+
+    mean_label = 'Mean Score'
+    se_label = 'SE Across Prompts'
+    sd_oracle_label = 'Within-Prompt Std across Oracle Rollouts'
+    sd_target_label = 'Within-Prompt Std across Target Rollouts'
+
+    display_df = src[keep].copy()
+    display_df[mean_label] = [_fmt_pct(v) for v in src['mean_score']]
+    display_df[se_label] = [_fmt_pct(v) for v in src[se_col]]
+    if include_within_prompt_std_oracle:
+        display_df[sd_oracle_label] = [_fmt_pct(v) for v in src[sd_oracle]]
+    if include_within_prompt_std_target:
+        display_df[sd_target_label] = [_fmt_pct(v) for v in src[sd_target]]
+    display_df = apply_display_transforms(display_df)
+    display_df = rename_display_columns(display_df)
+
+    score_means = {mean_label: src['mean_score']}
+    uncertainty_means: dict[str, pd.Series] = {se_label: src[se_col]}
+    if include_within_prompt_std_oracle:
+        uncertainty_means[sd_oracle_label] = src[sd_oracle]
+    if include_within_prompt_std_target:
+        uncertainty_means[sd_target_label] = src[sd_target]
+
+    def _styler(d: pd.DataFrame) -> pd.DataFrame:
+        base = 'text-align: right; font-variant-numeric: tabular-nums; padding: 5px 8px; vertical-align: middle;'
+        out = pd.DataFrame(base, index=d.index, columns=d.columns)
+        _gradient_styles_for_columns(out, score_means, 'YlGn', shared=False)
+        _gradient_styles_for_columns(out, uncertainty_means, 'YlOrRd', shared=True)
+        return out
+
+    styler = display_df.style.apply(_styler, axis=None)
+    styler = _apply_table_styles(styler)
+    try:
+        styler = styler.hide(axis='index')
+    except Exception:
+        pass
+    return styler
+
+
+def render_asr_table(df: pd.DataFrame):
+    """Build an ASR styled table (condition / probe / oracle_prompt_file / ASR thresholds).
+
+    Each ASR column shows 'mean% ± SE%'. All ASR cells share a single green
+    gradient computed over every ASR mean in the table.
+    """
+    src = df.reset_index(drop=True)
+    keep = ['condition', 'probe_name', 'oracle_prompt_file']
+    asr_specs = [
+        ('asr_0_2', 'asr_0_2_se', 'ASR >= 0.2'),
+        ('asr_0_5', 'asr_0_5_se', 'ASR >= 0.5'),
+        ('asr_0_8', 'asr_0_8_se', 'ASR >= 0.8'),
+        ('asr_1',   'asr_1_se',   'ASR = 1.0'),
+    ]
+
+    display_df = src[keep].copy()
+    column_means: dict[str, pd.Series] = {}
+    for m, s, label in asr_specs:
+        display_df[label] = [_fmt_mean_pm_se(mv, sv) for mv, sv in zip(src[m], src[s])]
+        column_means[label] = src[m]
+    display_df = apply_display_transforms(display_df)
+    display_df = rename_display_columns(display_df)
+
+    def _styler(d: pd.DataFrame) -> pd.DataFrame:
+        base = 'text-align: right; font-variant-numeric: tabular-nums; padding: 5px 8px; vertical-align: middle;'
+        out = pd.DataFrame(base, index=d.index, columns=d.columns)
+        _gradient_styles_for_columns(out, column_means, 'YlGn', shared=True)
+        return out
+
+    styler = display_df.style.apply(_styler, axis=None)
+    styler = _apply_table_styles(styler)
+    try:
+        styler = styler.hide(axis='index')
+    except Exception:
+        pass
+    return styler
+
+
+def render_baseline_table(df: pd.DataFrame):
+    """Baseline rows shown as one combined table: Mean Score, SE, and all ASR columns.
+
+    Color gradients:
+      - Mean Score: green gradient on its own scale
+      - SE Across Prompts: orange-red gradient on its own scale
+      - All ASR cells: single green gradient pooled across every ASR mean.
+    """
+    src = df.reset_index(drop=True)
+    keep = ['condition', 'probe_name', 'oracle_prompt_file']
+    asr_specs = [
+        ('asr_0_2', 'asr_0_2_se', 'ASR >= 0.2'),
+        ('asr_0_5', 'asr_0_5_se', 'ASR >= 0.5'),
+        ('asr_0_8', 'asr_0_8_se', 'ASR >= 0.8'),
+        ('asr_1',   'asr_1_se',   'ASR = 1.0'),
+    ]
+    mean_label = 'Mean Score'
+    se_label = 'SE Across Prompts'
+
+    display_df = src[keep].copy()
+    display_df[mean_label] = [_fmt_pct(v) for v in src['mean_score']]
+    display_df[se_label] = [_fmt_pct(v) for v in src['se_score']]
+    asr_means: dict[str, pd.Series] = {}
+    for m, s, label in asr_specs:
+        display_df[label] = [_fmt_mean_pm_se(mv, sv) for mv, sv in zip(src[m], src[s])]
+        asr_means[label] = src[m]
+
+    display_df = apply_display_transforms(display_df)
+    display_df = rename_display_columns(display_df)
+
+    score_means = {mean_label: src['mean_score']}
+    se_means = {se_label: src['se_score']}
+
+    def _styler(d: pd.DataFrame) -> pd.DataFrame:
+        base = 'text-align: right; font-variant-numeric: tabular-nums; padding: 5px 8px; vertical-align: middle;'
+        out = pd.DataFrame(base, index=d.index, columns=d.columns)
+        _gradient_styles_for_columns(out, score_means, 'YlGn', shared=False)
+        _gradient_styles_for_columns(out, se_means, 'YlOrRd', shared=False)
+        _gradient_styles_for_columns(out, asr_means, 'YlGn', shared=True)
+        return out
+
+    styler = display_df.style.apply(_styler, axis=None)
+    styler = _apply_table_styles(styler)
+    try:
+        styler = styler.hide(axis='index')
+    except Exception:
+        pass
+    return styler
+
+
+def print_oracle_prompts_legend(cfg) -> None:
+    """Print 'Oracle Prompt A/B/...: <first prompt text>' for each prompts path in cfg."""
+    from prompt_utils import load_oracle_prompts_from_file  # local: avoid top-level dep
+    print('Oracle prompt legend:')
+    for path in cfg.oracle_prompts_paths:
+        label = display_oracle_prompt_file(path)
+        try:
+            prompts = load_oracle_prompts_from_file(path)
+            first = prompts[0] if prompts else '<no prompts>'
+        except Exception as exc:
+            first = f'<error: {exc}>'
+        print(f'  {label}: {first}')
+
+
+def render_oracle_prompt_comparison_table(df: pd.DataFrame, probe_order: dict | None = None):
+    """Compare 'mean ± SE' across Oracle Prompt A vs B for one condition.
+
+    Expects rows already filtered to a single condition. Pivots so each
+    oracle_prompt_file becomes one column (labeled 'Oracle Prompt A' / 'B').
+    Rows are identified by (condition, probe_name) and ordered by `probe_order`
+    (token-stream rank) instead of alphabetical name.
+    A single green gradient is applied across all mean values in the table.
+    """
+    cols = ['condition', 'probe_kind', 'probe_name', 'oracle_prompt_file', 'mean_score', 'se_score']
+    src = df[[c for c in cols if c in df.columns]].copy()
+
+    # Sort source rows by (condition order, token-stream rank, probe_name) so
+    # the pivot preserves this ordering when sort=False.
+    if probe_order is not None and 'probe_kind' in src.columns:
+        src['_condition_rank'] = src['condition'].map(condition_rank)
+        src['_probe_rank'] = src.apply(
+            lambda r: probe_order.get((r.get('probe_kind'), r.get('probe_name')), 1e9), axis=1,
+        )
+        src = src.sort_values(['_condition_rank', '_probe_rank', 'probe_name'])
+        src = src.drop(columns=['_condition_rank', '_probe_rank'])
+
+    index_cols = ['condition', 'probe_name']
+    mean_pivot = src.pivot_table(
+        index=index_cols, columns='oracle_prompt_file', values='mean_score', aggfunc='first', sort=False,
+    )
+    se_pivot = src.pivot_table(
+        index=index_cols, columns='oracle_prompt_file', values='se_score', aggfunc='first', sort=False,
+    )
+
+    display_df = mean_pivot.reset_index()[index_cols].copy()
+    column_means: dict[str, pd.Series] = {}
+    for raw_col in mean_pivot.columns:
+        label = display_oracle_prompt_file(raw_col) or str(raw_col)
+        means_series = mean_pivot[raw_col].reset_index(drop=True)
+        se_series = se_pivot[raw_col].reset_index(drop=True)
+        display_df[label] = [_fmt_mean_pm_se(m, s) for m, s in zip(means_series, se_series)]
+        column_means[label] = means_series
+
+    display_df = apply_display_transforms(display_df)
+    display_df = rename_display_columns(display_df)
+    display_df = display_df.reset_index(drop=True)
+
+    def _styler(d: pd.DataFrame) -> pd.DataFrame:
+        base = 'text-align: right; font-variant-numeric: tabular-nums; padding: 5px 8px; vertical-align: middle;'
+        out = pd.DataFrame(base, index=d.index, columns=d.columns)
+        _gradient_styles_for_columns(out, column_means, 'YlGn', shared=True)
+        return out
+
+    styler = display_df.style.apply(_styler, axis=None)
+    styler = _apply_table_styles(styler)
+    try:
+        styler = styler.hide(axis='index')
+    except Exception:
+        pass
+    return styler
+
+
+def _apply_table_styles(styler):
+    return styler.set_table_styles([
+        {'selector': 'table', 'props': [('border-collapse', 'collapse'), ('margin', '0 auto')]},
+        {'selector': 'thead th', 'props': [
+            ('background-color', '#1e293b'), ('color', 'white'),
+            ('font-weight', '600'), ('text-align', 'center'),
+            ('vertical-align', 'middle'), ('padding', '5px 8px'),
+            ('border-bottom', '2px solid #475569'),
+        ]},
+        {'selector': 'tbody td', 'props': [
+            ('border-bottom', '1px solid #e2e8f0'),
+            ('padding', '5px 8px'),
+        ]},
+        {'selector': 'tbody tr:hover td', 'props': [('filter', 'brightness(0.93)')]},
+        {'selector': 'caption', 'props': [
+            ('caption-side', 'top'), ('font-weight', '600'), ('color', '#1e293b'),
+        ]},
+    ], overwrite=True)
+
+
+def clip_text(value, n: int | None = 180):
     if pd.isna(value):
         return value
     text = str(value)
+    if n is None:
+        return text
     return text if len(text) <= n else text[:n] + '...'
 
 
@@ -293,12 +693,19 @@ def rename_display_columns(df: pd.DataFrame) -> pd.DataFrame:
         'asr_1': 'ASR = 1.0',
         'asr_1_se': 'ASR = 1.0 SE Across Prompts',
         'n_prompts_with_sd': 'Prompts With Within-Prompt SD',
-        'mean_within_prompt_sd': 'Mean Within-Prompt SD',
-        'median_within_prompt_sd': 'Median Within-Prompt SD',
+        'sd_within_prompt_oracle_rollouts': 'Within-Prompt Std across Oracle Rollouts',
+        'sd_within_prompt_target_rollouts': 'Within-Prompt Std across Target Rollouts',
+        'mean_within_prompt_sd_oracle_rollouts': 'Within-Prompt Std across Oracle Rollouts',
+        'mean_within_prompt_sd_target_rollouts': 'Within-Prompt Std across Target Rollouts',
         'mean_within_prompt_n': 'Mean Scored Rollouts Per Prompt',
         'cache_path_alias': 'Cache Path',
+        'shared_cache_prefix': 'Shared Cache Prefix',
         'missing_cache_path_alias': 'Missing Cache Path',
         'compliance_leaf_preview': 'Compliance Leaf Preview',
+        'oracle_rollout': 'Oracle Rollout',
+        'target_rollout': 'Target Rollout',
+        'target_rollout_response': 'Target Rollout Response',
+        'oracle_response': 'Oracle Response',
         'oracle_response_preview': 'Oracle Response Preview',
         'target_prompt': 'Target Prompt Preview',
         'oracle_prompt': 'Oracle Prompt Preview',
@@ -343,10 +750,17 @@ def apply_probe_sort(df: pd.DataFrame, probe_order: dict | None = None) -> pd.Da
         lambda r: probe_order.get((r.get('probe_kind'), r.get('probe_name')), 1e9), axis=1
     )
     out['_probe_name_sort'] = out['probe_name'].astype(str)
-    sort_cols = [c for c in ['condition', 'oracle_prompt_file', 'probe_kind'] if c in out.columns]
+    sort_cols: list[str] = []
+    if 'condition' in out.columns:
+        out['_condition_rank'] = out['condition'].map(condition_rank)
+        sort_cols.append('_condition_rank')
+    if 'oracle_prompt_file' in out.columns:
+        sort_cols.append('oracle_prompt_file')
+    if 'probe_kind' in out.columns:
+        sort_cols.append('probe_kind')
     sort_cols.extend(['_probe_rank', '_probe_name_sort'])
     out = out.sort_values(sort_cols)
-    return out.drop(columns=['_probe_rank', '_probe_name_sort'])
+    return out.drop(columns=[c for c in ['_probe_rank', '_probe_name_sort', '_condition_rank'] if c in out.columns])
 
 
 def build_provenance(details: pd.DataFrame, path_aliaser: PathAliaser, probe_order: dict) -> pd.DataFrame:

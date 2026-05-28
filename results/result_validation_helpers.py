@@ -2,13 +2,99 @@
 from __future__ import annotations
 
 import json
+from dataclasses import dataclass
 from pathlib import Path
 
 import pandas as pd
 from IPython.display import display
 
-from viz_helpers import PathAliaser, apply_display_transforms, clip_text, rename_display_columns
+from viz_helpers import (
+    PathAliaser,
+    apply_display_transforms,
+    apply_path_segment_aliases,
+    clip_text,
+    condition_rank,
+    rename_display_columns,
+)
 from prompt_utils import load_target_prompts_from_dataset
+
+
+def longest_common_path_prefix(paths) -> str:
+    """Longest component-wise common path prefix of an iterable of '/'-separated paths."""
+    paths = [p for p in paths if isinstance(p, str)]
+    if not paths:
+        return ''
+    split = [[x for x in p.split('/') if x] for p in paths]
+    common: list[str] = []
+    for components in zip(*split):
+        first = components[0]
+        if all(c == first for c in components):
+            common.append(first)
+        else:
+            break
+    leading = '/' if paths[0].startswith('/') else ''
+    return leading + '/'.join(common)
+
+
+def build_reliability_with_shared_prefix(
+    reliability: pd.DataFrame,
+    details: pd.DataFrame,
+    cache_root,
+    group_keys=('condition', 'probe_kind', 'probe_name', 'oracle_prompt_file'),
+) -> pd.DataFrame:
+    """Add a `shared_cache_prefix` column to the reliability table.
+
+    For each (condition, probe_kind, probe_name, oracle_prompt_file) group, finds the
+    longest common parent-directory prefix of the contributing cache files, strips the
+    common cache root, and applies known path-segment aliases for readability.
+    """
+    group_keys = list(group_keys)
+    prefix_map = (
+        details.groupby(group_keys)['cache_path']
+        .apply(longest_common_path_prefix)
+        .reset_index(name='shared_cache_prefix')
+    )
+    cache_root_str = str(Path(cache_root).resolve()).rstrip('/') + '/'
+    prefix_map['shared_cache_prefix'] = (
+        prefix_map['shared_cache_prefix']
+        .map(lambda p: p[len(cache_root_str):] if isinstance(p, str) and p.startswith(cache_root_str) else p)
+        .map(apply_path_segment_aliases)
+    )
+    rel = reliability.drop(columns=['oracle_prompt', 'oracle_prompt_index'], errors='ignore')
+    return rel.merge(prefix_map, on=group_keys, how='left')
+
+
+def build_oracle_output_examples(
+    details: pd.DataFrame,
+    probe_order: dict,
+    path_aliaser: PathAliaser,
+) -> pd.DataFrame:
+    """One example oracle output per unique score for every (condition, probe, oracle_prompt_file).
+
+    Picks the first cache row in each (condition, probe_kind, probe_name,
+    oracle_prompt_file, score) group, then orders rows by token-stream probe
+    rank (then score). Returns the peek DataFrame ready for display.
+    """
+    group_keys = ['condition', 'probe_kind', 'probe_name', 'oracle_prompt_file', 'score']
+    examples = (
+        details.dropna(subset=['score', 'cache_path'])
+        .sort_values(group_keys + ['target_prompt_index', 'rollout_index'])
+        .groupby(group_keys, as_index=False, dropna=False)
+        .first()
+    )
+    examples['_condition_rank'] = examples['condition'].map(condition_rank)
+    examples['_probe_rank'] = examples.apply(
+        lambda r: probe_order.get((r.get('probe_kind'), r.get('probe_name')), 1e9), axis=1,
+    )
+    examples = examples.sort_values(
+        ['_condition_rank', 'oracle_prompt_file', 'probe_kind', '_probe_rank', 'probe_name', 'score']
+    ).drop(columns=['_condition_rank', '_probe_rank']).reset_index(drop=True)
+    # Full oracle (and target, when present) rollouts — the whole point of the
+    # examples table is to see what text actually got the given judge score.
+    return build_peek_table(
+        examples, path_aliaser,
+        oracle_rollout_clip=None, target_rollout_clip=None,
+    )
 
 
 def build_coverage_df(manifest: dict) -> pd.DataFrame:
@@ -87,7 +173,10 @@ def _reasons_for_missing_indices(
             parts.append(f'idx {idx}: entry absent')
         else:
             leaf = _get_compliance_leaf(index_to_entry[idx], probe_kind, probe_name)
-            parts.append(f'idx {idx}: {_leaf_skip_reason(leaf, judge_instruction_stem)}')
+            reason = _leaf_skip_reason(leaf, judge_instruction_stem)
+            if 'Judge output format invalid:' in reason:
+                reason = 'invalid judge output'
+            parts.append(f'idx {idx}: {reason}')
     return '; '.join(parts) if parts else 'unknown'
 
 
@@ -118,22 +207,29 @@ def _coverage_warning_reason(
     return 'rollouts not generated or not scored'
 
 
-def display_coverage_report(manifest: dict, cfg) -> PathAliaser:
-    """Print and display the full coverage validation report for a compiled manifest.
+@dataclass
+class CoverageReport:
+    aliaser: PathAliaser
+    warnings: pd.DataFrame
+    n_missing_files: int
+    n_malformed_files: int
+    n_skipped_leaves: int
 
-    Covers: warning counts, coverage warnings table, missing files with path aliases,
-    parent-directory probing for missing files, and skipped score leaves.
+    def summary_line(self) -> str:
+        return (
+            f"Missing files: {self.n_missing_files} | "
+            f"Malformed files: {self.n_malformed_files} | "
+            f"Skipped score leaves: {self.n_skipped_leaves} | "
+            f"Coverage warning rows: {len(self.warnings)}"
+        )
 
-    Returns the PathAliaser built from the manifest's missing files so callers can
-    reuse it before the full details DataFrame is available.
+
+def build_coverage_report(manifest: dict, cfg) -> CoverageReport:
+    """Build the coverage validation artifacts for a compiled manifest.
+
+    Returns a CoverageReport with the path alias legend (aliaser) and the
+    coverage warnings table; the caller is responsible for displaying them.
     """
-    print(f"Missing expected files: {len(manifest.get('missing_files', []))}")
-    print(f"Malformed files: {len(manifest.get('malformed_files', []))}")
-    print(
-        f"Skipped score leaves (probe entries with no accepted numeric StrongReject score): "
-        f"{len(manifest.get('skipped_score_leaves', []))}"
-    )
-
     target_prompts = load_target_prompts_from_dataset(
         limit=cfg.expected_target_prompts, offset=cfg.target_prompt_offset
     )
@@ -143,6 +239,14 @@ def display_coverage_report(manifest: dict, cfg) -> PathAliaser:
     skipped_by_path: dict = {}
     for leaf in manifest.get('skipped_score_leaves', []):
         skipped_by_path.setdefault(leaf['path'], []).append(leaf)
+
+    all_paths: list[str] = []
+    all_paths.extend(str(x) for x in manifest.get('missing_files', []))
+    all_paths.extend(str(leaf['path']) for leaf in manifest.get('skipped_score_leaves', []))
+    for w in manifest.get('coverage_warnings', []):
+        if w.get('path'):
+            all_paths.append(str(w['path']))
+    aliaser = PathAliaser(cfg.target_model_name, cfg.cache_root, cfg.output_dir, all_paths)
 
     warnings_df = pd.DataFrame(manifest.get('coverage_warnings', []))
     if not warnings_df.empty:
@@ -160,53 +264,21 @@ def display_coverage_report(manifest: dict, cfg) -> PathAliaser:
                 ),
             )
             warnings_df = warnings_df.drop(columns=['target_prompt_index'])
+        if 'path' in warnings_df.columns:
+            warnings_df['path'] = warnings_df['path'].map(
+                lambda p: aliaser.alias(p) if isinstance(p, str) and p else p
+            )
         warnings_df = apply_display_transforms(warnings_df)
         if 'probe_kind' in warnings_df.columns and 'probe_name' in warnings_df.columns:
             warnings_df = warnings_df.drop(columns=['probe_kind'])
-        display(warnings_df.head(50))
-    else:
-        print('No coverage warnings.')
 
-    coverage_aliaser = PathAliaser(
-        cfg.target_model_name, cfg.cache_root, cfg.output_dir,
-        [str(x) for x in manifest.get('missing_files', [])],
+    return CoverageReport(
+        aliaser=aliaser,
+        warnings=warnings_df,
+        n_missing_files=len(manifest.get('missing_files', [])),
+        n_malformed_files=len(manifest.get('malformed_files', [])),
+        n_skipped_leaves=len(manifest.get('skipped_score_leaves', [])),
     )
-    display(coverage_aliaser.legend_df())
-
-    missing_df = pd.DataFrame({'missing_cache_path': manifest.get('missing_files', [])})
-    if not missing_df.empty:
-        missing_df['missing_cache_path_alias'] = missing_df['missing_cache_path'].map(coverage_aliaser.alias)
-        display(rename_display_columns(missing_df[['missing_cache_path_alias', 'missing_cache_path']].head(50)))
-
-        examples = []
-        for raw_path in missing_df['missing_cache_path'].head(10):
-            path = Path(raw_path)
-            parent = path.parent
-            siblings = sorted([c.name for c in parent.glob('*.json')])[:3] if parent.exists() else []
-            examples.append({
-                'missing_cache_path_alias': coverage_aliaser.alias(raw_path),
-                'parent_exists': parent.exists(),
-                'example_files_in_parent': '\n'.join(siblings) if siblings else '<none>',
-            })
-        display(pd.DataFrame(examples))
-    else:
-        print('No missing cache files in current compile pass.')
-
-    skipped_df = pd.DataFrame(manifest.get('skipped_score_leaves', []))
-    if not skipped_df.empty:
-        skipped_df['path_alias'] = skipped_df['path'].map(coverage_aliaser.alias)
-        skipped_reasons = (
-            skipped_df.groupby('reason', dropna=False)
-            .size().reset_index(name='n_leaves')
-            .sort_values('n_leaves', ascending=False)
-        )
-        print('Skipped score leaves by reason:')
-        display(skipped_reasons)
-        display(skipped_df[['path_alias', 'reason']].head(50))
-    else:
-        print('No skipped score leaves.')
-
-    return coverage_aliaser
 
 
 def apply_filter(df: pd.DataFrame, spec: dict) -> pd.DataFrame:
@@ -236,26 +308,75 @@ def extract_leaf(container, probe_kind: str, probe_name: str | None):
         return node
     if isinstance(node, dict):
         return node.get(probe_name)
+    # Scalar probe kinds (e.g. 'rollout_segment', 'full_seq') store the leaf
+    # value (string for oracle_response, dict for compliance) directly at
+    # container[probe_kind] rather than nesting it under probe_name. In compile
+    # we emit these as (probe_kind, probe_kind), so probe_name == probe_kind.
+    if probe_name == probe_kind:
+        return node
     return None
 
 
 def match_entry(entries: list, row: dict) -> dict | None:
-    for entry in entries:
-        if row.get('rollout_index') == entry.get('rollout_index'):
-            return entry
-    for entry in entries:
-        if (row.get('oracle_rollout_index') is not None
-                and row.get('oracle_rollout_index') == entry.get('oracle_rollout_index')):
-            return entry
+    # 1) Strongest match: locate the entry whose compliance leaf for this
+    #    (probe_kind, probe_name) actually produced this row's score. This is
+    #    required for the examples table where multiple rollouts/scores share a
+    #    cache file and index-based matching would pick the wrong rollout.
+    row_score = row.get('score')
+    probe_kind = row.get('probe_kind')
+    probe_name = row.get('probe_name')
+    if row_score is not None and probe_kind is not None:
+        try:
+            target = float(row_score)
+        except (TypeError, ValueError):
+            target = None
+        if target is not None:
+            for entry in entries:
+                if not isinstance(entry, dict):
+                    continue
+                leaf = extract_leaf(entry.get('compliance', {}), probe_kind, probe_name)
+                if not isinstance(leaf, dict):
+                    continue
+                try:
+                    leaf_score = float(leaf.get('score'))
+                except (TypeError, ValueError):
+                    continue
+                if abs(leaf_score - target) < 1e-9:
+                    return entry
+    # 2) Index-based fallback.
+    row_rollout = row.get('rollout_index')
+    if row_rollout is not None:
+        for entry in entries:
+            if isinstance(entry, dict) and entry.get('rollout_index') == row_rollout:
+                return entry
+    row_oracle = row.get('oracle_rollout_index')
+    if row_oracle is not None:
+        for entry in entries:
+            if isinstance(entry, dict) and entry.get('oracle_rollout_index') == row_oracle:
+                return entry
     return None
 
 
-def build_peek_table(filtered: pd.DataFrame, path_aliaser) -> pd.DataFrame:
+def build_peek_table(
+    filtered: pd.DataFrame,
+    path_aliaser,
+    *,
+    oracle_rollout_clip: int | None = 220,
+    target_rollout_clip: int | None = 220,
+    compliance_leaf_clip: int | None = 220,
+    prompt_clip: int | None = 160,
+) -> pd.DataFrame:
     """Load cache entries for each row in *filtered* and return a preview DataFrame.
 
     Args:
         filtered: Subset of the details DataFrame to inspect.
         path_aliaser: A PathAliaser instance used to compact cache paths for display.
+        oracle_rollout_clip: Max chars for the oracle rollout text; None = unclipped.
+        target_rollout_clip: Max chars for the target rollout text (when the cache
+            entry includes a target_response that was judged alongside the oracle);
+            None = unclipped.
+        compliance_leaf_clip: Max chars for the compliance leaf preview; None = unclipped.
+        prompt_clip: Max chars for the target/oracle prompt previews; None = unclipped.
     """
     rows = []
     for _, row in filtered.iterrows():
@@ -280,24 +401,38 @@ def build_peek_table(filtered: pd.DataFrame, path_aliaser) -> pd.DataFrame:
             extract_leaf(entry.get('compliance', {}), row.get('probe_kind'), row.get('probe_name'))
             if isinstance(entry, dict) else None
         )
+        # Use the post-thinking 'response_only' portion when present, so the
+        # displayed target rollout matches what the judge actually scored.
+        target_response_only = None
+        if isinstance(entry, dict):
+            target_format = entry.get('target_format')
+            if isinstance(target_format, dict):
+                target_response_only = target_format.get('response_only')
+            if target_response_only is None:
+                target_response_only = entry.get('target_response')
 
         rows.append({
             'condition': row.get('condition'),
+            'oracle_prompt_file': row.get('oracle_prompt_file'),
             'target_prompt_index': row.get('target_prompt_index'),
-            'rollout_index': row.get('rollout_index'),
             'target_rollout_index': row.get('target_rollout_index'),
             'oracle_rollout_index': row.get('oracle_rollout_index'),
             'probe_kind': row.get('probe_kind'),
             'probe_name': row.get('probe_name'),
             'score': row.get('score'),
-            'target_prompt': clip_text(row.get('target_prompt'), 160),
-            'oracle_prompt': clip_text(row.get('oracle_prompt'), 160),
-            'oracle_response_preview': clip_text(oracle_leaf, 220),
-            'compliance_leaf_preview': clip_text(compliance_leaf, 220),
+            'target_prompt': clip_text(row.get('target_prompt'), prompt_clip),
+            'oracle_prompt': clip_text(row.get('oracle_prompt'), prompt_clip),
+            'target_rollout_response': clip_text(target_response_only, target_rollout_clip),
+            'oracle_rollout': clip_text(oracle_leaf, oracle_rollout_clip),
+            'compliance_leaf_preview': clip_text(compliance_leaf, compliance_leaf_clip),
             'cache_path': cache_path,
             'cache_path_alias': path_aliaser.alias(cache_path),
         })
 
     out = pd.DataFrame(rows)
+    # Use pandas' nullable integer dtype so indices render as 'N' (not 'N.0') and NaN -> '<NA>'.
+    for col in ('target_prompt_index', 'target_rollout_index', 'oracle_rollout_index'):
+        if col in out.columns:
+            out[col] = pd.to_numeric(out[col], errors='coerce').astype('Int64')
     out = apply_display_transforms(out)
     return out

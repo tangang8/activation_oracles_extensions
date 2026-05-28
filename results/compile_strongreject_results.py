@@ -20,6 +20,19 @@ from prompt_utils import load_oracle_prompts_from_file, load_target_prompts_from
 
 
 SCALAR_PROBES = ("full_seq", "segment", "prompt_segment", "rollout_segment")
+
+# Maps each condition to the rollout axis whose within-prompt variability is
+# scientifically interesting:
+#   user_prompt_oracle (Exp 3): variability across oracle rollouts (oracle decoding reliability).
+#   target_rollout_oracle (Exp 4): variability across target rollouts (refusal leakiness variation).
+# Baselines (Exp 1, 2) vary across target rollouts but that's just target-model
+# response variability, not oracle-related — left blank.
+CONDITION_TO_WITHIN_PROMPT_AXIS: dict[str, str | None] = {
+    "user_prompt_oracle": "oracle_rollouts",
+    "target_rollout_oracle": "target_rollouts",
+    "target_baseline": None,
+    "oracle_rollout_control": None,
+}
 ROLLOUT_POST_PROMPT_VARIANT = json.dumps(
     {
         "oracle_input_types": ["rollout_segment", "token_points"],
@@ -334,6 +347,8 @@ def _prompt_level_rows(detail_rows: list[dict[str, Any]], thresholds: tuple[floa
     out: list[dict[str, Any]] = []
     for key, rows in grouped.items():
         scores = [float(row["score"]) for row in rows]
+        sd = _round(_sample_sd(scores))
+        axis = CONDITION_TO_WITHIN_PROMPT_AXIS.get(key[0])
         prompt_row: dict[str, Any] = {
             "condition": key[0],
             "preset_source": key[1],
@@ -349,7 +364,8 @@ def _prompt_level_rows(detail_rows: list[dict[str, Any]], thresholds: tuple[floa
             "n_scored": len(scores),
             "oracle_rollout_indices": sorted({r["oracle_rollout_index"] for r in rows if r.get("oracle_rollout_index") is not None}),
             "mean_score": _round(_mean(scores)),
-            "sd_score_within_prompt": _round(_sample_sd(scores)),
+            "sd_within_prompt_oracle_rollouts": sd if axis == "oracle_rollouts" else None,
+            "sd_within_prompt_target_rollouts": sd if axis == "target_rollouts" else None,
             "cache_path": rows[0].get("cache_path"),
         }
         for threshold in thresholds:
@@ -431,16 +447,17 @@ def _reliability_rows(prompt_rows: list[dict[str, Any]]) -> list[dict[str, Any]]
 
     out: list[dict[str, Any]] = []
     for key, rows in grouped.items():
-        within_sds = [float(row["sd_score_within_prompt"]) for row in rows if _is_score(row.get("sd_score_within_prompt"))]
         ns = [float(row["n_scored"]) for row in rows if _is_score(row.get("n_scored"))]
-        sorted_sds = sorted(within_sds)
-        median_sd = None
-        if sorted_sds:
-            mid = len(sorted_sds) // 2
-            if len(sorted_sds) % 2:
-                median_sd = sorted_sds[mid]
-            else:
-                median_sd = (sorted_sds[mid - 1] + sorted_sds[mid]) / 2.0
+        oracle_sds = [
+            float(row["sd_within_prompt_oracle_rollouts"])
+            for row in rows
+            if _is_score(row.get("sd_within_prompt_oracle_rollouts"))
+        ]
+        target_sds = [
+            float(row["sd_within_prompt_target_rollouts"])
+            for row in rows
+            if _is_score(row.get("sd_within_prompt_target_rollouts"))
+        ]
         out.append(
             {
                 "condition": key[0],
@@ -451,9 +468,9 @@ def _reliability_rows(prompt_rows: list[dict[str, Any]]) -> list[dict[str, Any]]
                 "oracle_prompt": key[5],
                 "probe_kind": key[6],
                 "probe_name": key[7],
-                "n_prompts_with_sd": len(within_sds),
-                "mean_within_prompt_sd": _round(_mean(within_sds)),
-                "median_within_prompt_sd": _round(median_sd),
+                "n_prompts_with_sd": len(oracle_sds) + len(target_sds),
+                "mean_within_prompt_sd_oracle_rollouts": _round(_mean(oracle_sds)) if oracle_sds else None,
+                "mean_within_prompt_sd_target_rollouts": _round(_mean(target_sds)) if target_sds else None,
                 "mean_within_prompt_n": _round(_mean(ns)),
             }
         )
